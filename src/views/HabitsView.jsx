@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Square } from 'lucide-react';
+import { Check, Square, ChevronDown, ChevronRight, X } from 'lucide-react';
 import ActionMenu from '../components/ActionMenu';
 
 const REALMS = [
@@ -8,12 +8,43 @@ const REALMS = [
   { key: 'evening', label: 'Evening' },
 ];
 
-export default function HabitsView({ habits, setHabits, habitHistory, onBeginNewDay }) {
+const WEEKDAYS = [
+  { key: 'mon', label: 'M' },
+  { key: 'tue', label: 'T' },
+  { key: 'wed', label: 'W' },
+  { key: 'thu', label: 'T' },
+  { key: 'fri', label: 'F' },
+  { key: 'sat', label: 'S' },
+  { key: 'sun', label: 'S' },
+];
+
+export default function HabitsView({ habits, setHabits, habitHistory, onBeginNewDay, weeklyHabits, setWeeklyHabits }) {
   const [dragId, setDragId] = useState(null);
   const [dragOverZone, setDragOverZone] = useState(null);
   const [dragOverCard, setDragOverCard] = useState(null);
   const [name, setName] = useState('');
   const [timeOfDay, setTimeOfDay] = useState('morning');
+
+  const [weeklyOpen, setWeeklyOpen] = useState(false);
+  const [wName, setWName] = useState('');
+  const [wTimeOfDay, setWTimeOfDay] = useState('morning');
+  const [wDays, setWDays] = useState([]);
+
+  function toggleWDay(day) {
+    setWDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
+  }
+
+  function addWeeklyHabit(e) {
+    e.preventDefault();
+    if (!wName.trim() || wDays.length === 0) return;
+    setWeeklyHabits([...weeklyHabits, { id: Date.now(), name: wName.trim(), timeOfDay: wTimeOfDay, days: wDays }]);
+    setWName('');
+    setWDays([]);
+  }
+
+  function deleteWeeklyHabit(id) {
+    setWeeklyHabits(weeklyHabits.filter((w) => w.id !== id));
+  }
 
   function addHabit(e) {
     e.preventDefault();
@@ -136,6 +167,64 @@ export default function HabitsView({ habits, setHabits, habitHistory, onBeginNew
         </select>
         <button type="submit" className="btn btn-primary">Add habit</button>
       </form>
+
+      <div className="collapsible">
+        <button className="collapsible-header" onClick={() => setWeeklyOpen((o) => !o)}>
+          Day-specific habits
+          <span className="chev">{weeklyOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</span>
+        </button>
+        {weeklyOpen && (
+          <div className="collapsible-body">
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
+              These appear automatically in the list above on the days you choose, whenever you click "Begin a new day."
+            </p>
+            <form onSubmit={addWeeklyHabit} style={{ marginBottom: 14 }}>
+              <div className="form-row" style={{ marginBottom: 8 }}>
+                <input type="text" placeholder="Habit name" value={wName} onChange={(e) => setWName(e.target.value)} />
+                <select value={wTimeOfDay} onChange={(e) => setWTimeOfDay(e.target.value)}>
+                  {REALMS.map((r) => (
+                    <option key={r.key} value={r.key}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="weekday-row">
+                {WEEKDAYS.map((d) => (
+                  <button
+                    type="button"
+                    key={d.key}
+                    className={`weekday-chip ${wDays.includes(d.key) ? 'selected' : ''}`}
+                    onClick={() => toggleWDay(d.key)}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+                <button type="submit" className="btn btn-primary" style={{ marginLeft: 8 }}>Add</button>
+              </div>
+            </form>
+
+            {weeklyHabits.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>No day-specific habits yet.</p>
+            ) : (
+              weeklyHabits.map((w) => (
+                <div className="weekly-habit-row" key={w.id}>
+                  <div className="weekly-habit-info">
+                    <span style={{ fontSize: 13 }}>{w.name}</span>
+                    <span className="tag">{REALMS.find((r) => r.key === w.timeOfDay)?.label}</span>
+                    <div className="weekly-habit-days">
+                      {WEEKDAYS.filter((d) => w.days.includes(d.key)).map((d) => (
+                        <span key={d.key}>{d.label}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <button className="chore-remove" onClick={() => deleteWeeklyHabit(w.id)} aria-label="Delete">
+                    <X size={14} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="history-box">
         <div className="eyebrow" style={{ marginBottom: 0 }}>Consistency</div>

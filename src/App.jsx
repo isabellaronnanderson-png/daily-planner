@@ -8,6 +8,10 @@ import TodoView from './views/TodoView';
 import ChoresView from './views/ChoresView';
 import './App.css';
 
+const DEFAULT_TAB_ORDER = ['habits', 'weekend', 'todo', 'chores', 'schedule'];
+
+const DEFAULT_WEEKLY_HABITS = [];
+
 const DEFAULT_HABITS = [
   { id: 'h1', name: 'Walk in the garden', timeOfDay: 'morning', completed: false },
   { id: 'h2', name: 'Sip tea', timeOfDay: 'afternoon', completed: false },
@@ -34,10 +38,13 @@ const DEFAULT_CHORES = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('habits');
+  const [tabOrder, setTabOrder] = useLocalStorage('planner_tab_order', DEFAULT_TAB_ORDER);
   const [coverImage, setCoverImage] = useLocalStorage('planner_cover_image', null);
+  const [coverPosition, setCoverPosition] = useLocalStorage('planner_cover_position', { x: 50, y: 50 });
 
   const [habits, setHabits] = useLocalStorage('planner_habits', DEFAULT_HABITS);
   const [habitHistory, setHabitHistory] = useLocalStorage('planner_habit_history', []);
+  const [weeklyHabits, setWeeklyHabits] = useLocalStorage('planner_weekly_habits', DEFAULT_WEEKLY_HABITS);
 
   const [weekendTasks, setWeekendTasks] = useLocalStorage('planner_weekend', DEFAULT_WEEKEND);
   const [weekendHistory, setWeekendHistory] = useLocalStorage('planner_weekend_history', []);
@@ -50,6 +57,8 @@ export default function App() {
 
   const [chores, setChores] = useLocalStorage('planner_chores', DEFAULT_CHORES);
 
+  const safeTabOrder = [...tabOrder, ...DEFAULT_TAB_ORDER.filter((k) => !tabOrder.includes(k))];
+
   function resetChore(id) {
     setChores(chores.map((c) => (c.id === id ? { ...c, lastDone: Date.now() } : c)));
   }
@@ -59,11 +68,20 @@ export default function App() {
     return day === 0 || day === 6 || isHolidayMode;
   }
 
+  const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
   function beginNewDay() {
     const todayKey = new Date().toISOString().split('T')[0];
     const snapshot = habits.map((h) => ({ name: h.name, timeOfDay: h.timeOfDay, completed: h.completed }));
     setHabitHistory([{ date: todayKey, snapshot }, ...habitHistory].slice(0, 14));
-    setHabits(habits.map((h) => ({ ...h, completed: false })));
+
+    const todaysWeekday = WEEKDAY_KEYS[new Date().getDay()];
+    const baseHabits = habits.filter((h) => !h.fromWeekly).map((h) => ({ ...h, completed: false }));
+    const injected = weeklyHabits
+      .filter((w) => w.days.includes(todaysWeekday))
+      .map((w) => ({ id: 'wh_' + w.id, name: w.name, timeOfDay: w.timeOfDay, completed: false, fromWeekly: true }));
+    setHabits([...baseHabits, ...injected]);
+
     setScheduleTasks([]);
 
     let nextTodos = todos.map((t) => (t.isFocus && t.completed ? { ...t, isFocus: false } : t));
@@ -86,10 +104,26 @@ export default function App() {
 
   return (
     <div className="app">
-      <Header coverImage={coverImage} setCoverImage={setCoverImage} activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Header
+        coverImage={coverImage}
+        setCoverImage={setCoverImage}
+        coverPosition={coverPosition}
+        setCoverPosition={setCoverPosition}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        tabOrder={safeTabOrder}
+        setTabOrder={setTabOrder}
+      />
 
       {activeTab === 'habits' && (
-        <HabitsView habits={habits} setHabits={setHabits} habitHistory={habitHistory} onBeginNewDay={beginNewDay} />
+        <HabitsView
+          habits={habits}
+          setHabits={setHabits}
+          habitHistory={habitHistory}
+          onBeginNewDay={beginNewDay}
+          weeklyHabits={weeklyHabits}
+          setWeeklyHabits={setWeeklyHabits}
+        />
       )}
       {activeTab === 'weekend' && (
         <WeekendView tasks={weekendTasks} setTasks={setWeekendTasks} history={weekendHistory} onResetWeekend={resetWeekend} />

@@ -16,6 +16,24 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  cursor: move;
+  user-select: none;
+}
+.cover-reposition-hint {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: rgba(0,0,0,0.45);
+  color: #fff;
+  font-size: 11px;
+  padding: 4px 9px;
+  border-radius: var(--radius);
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.cover:hover .cover-reposition-hint {
+  opacity: 1;
 }
 .cover-empty {
   width: 100%;
@@ -99,7 +117,9 @@
   color: var(--text-muted);
   border-bottom: 2px solid transparent;
   white-space: nowrap;
+  cursor: grab;
 }
+.tab:active { cursor: grabbing; }
 .tab.active {
   color: var(--text);
   font-weight: 500;
@@ -107,6 +127,9 @@
 }
 .tab:hover:not(.active) {
   color: var(--text-secondary);
+}
+.tab.tab-drag-over {
+  color: var(--navy);
 }
 
 .view {
@@ -539,7 +562,6 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
 .bank-list {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  overflow: hidden;
 }
 .bank-list .card {
   border-radius: 0;
@@ -709,7 +731,84 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
 }
 .chore-remove:hover { color: var(--red); }
 
-/* ===== Toggle (holiday mode) ===== */
+/* ===== Collapsible day-specific habits ===== */
+.collapsible {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+}
+.collapsible-header {
+  width: 100%;
+  background: var(--surface);
+  border: none;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.collapsible-header:hover {
+  background: var(--surface-hover);
+}
+.collapsible-header .chev {
+  color: var(--text-muted);
+  display: flex;
+}
+.collapsible-body {
+  padding: 1rem;
+}
+.weekday-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.weekday-chip {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.weekday-chip.selected {
+  background: var(--text);
+  border-color: var(--text);
+  color: #fff;
+}
+.weekly-habit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.weekly-habit-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.weekly-habit-days {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.weekly-habit-days span {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border-radius: 3px;
+  padding: 2px 4px;
+}
 .toggle-pill {
   display: inline-flex;
   align-items: center;

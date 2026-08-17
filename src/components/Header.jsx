@@ -1,33 +1,91 @@
-import { useRef } from 'react';
-import { ImagePlus, RefreshCw, X } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { ImagePlus, RefreshCw, X, Move } from 'lucide-react';
 
-const TABS = [
-  { key: 'habits', label: 'Habits' },
-  { key: 'weekend', label: 'Weekend' },
-  { key: 'schedule', label: 'Schedule' },
-  { key: 'todo', label: 'To-do' },
-  { key: 'chores', label: 'Chores' },
-];
+export const TAB_META = {
+  habits: 'Habits',
+  weekend: 'Weekend',
+  todo: 'To-do',
+  chores: 'Chores',
+  schedule: 'Schedule',
+};
 
-export default function Header({ coverImage, setCoverImage, activeTab, setActiveTab }) {
+export default function Header({
+  coverImage, setCoverImage,
+  coverPosition, setCoverPosition,
+  activeTab, setActiveTab,
+  tabOrder, setTabOrder,
+}) {
   const fileRef = useRef(null);
+  const coverRef = useRef(null);
+  const [dragTabId, setDragTabId] = useState(null);
+  const [dragOverTabId, setDragOverTabId] = useState(null);
 
   function handleFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => setCoverImage(reader.result);
+    reader.onload = () => {
+      setCoverImage(reader.result);
+      setCoverPosition({ x: 50, y: 50 });
+    };
     reader.readAsDataURL(file);
     e.target.value = '';
+  }
+
+  function startCoverDrag(e) {
+    e.preventDefault();
+    const rect = coverRef.current.getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startPos = { ...coverPosition };
+
+    function onMove(moveEvent) {
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+      const nextX = Math.max(0, Math.min(100, startPos.x - (deltaX / rect.width) * 100));
+      const nextY = Math.max(0, Math.min(100, startPos.y - (deltaY / rect.height) * 100));
+      setCoverPosition({ x: nextX, y: nextY });
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  function dropTab(targetId) {
+    if (!dragTabId || dragTabId === targetId) {
+      setDragTabId(null);
+      setDragOverTabId(null);
+      return;
+    }
+    const order = [...tabOrder];
+    const fromIdx = order.indexOf(dragTabId);
+    const toIdx = order.indexOf(targetId);
+    order.splice(fromIdx, 1);
+    order.splice(toIdx, 0, dragTabId);
+    setTabOrder(order);
+    setDragTabId(null);
+    setDragOverTabId(null);
   }
 
   const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   return (
     <>
-      <div className="cover">
+      <div className="cover" ref={coverRef}>
         {coverImage ? (
-          <img src={coverImage} alt="" />
+          <>
+            <img
+              src={coverImage}
+              alt=""
+              style={{ objectPosition: `${coverPosition.x}% ${coverPosition.y}%` }}
+              onMouseDown={startCoverDrag}
+              draggable={false}
+            />
+            <span className="cover-reposition-hint"><Move size={11} style={{ marginRight: 4, verticalAlign: -1 }} />Drag to reposition</span>
+          </>
         ) : (
           <button className="cover-empty" onClick={() => fileRef.current.click()}>
             <ImagePlus size={16} /> Add a cover photo
@@ -50,13 +108,18 @@ export default function Header({ coverImage, setCoverImage, activeTab, setActive
       </div>
 
       <nav className="tabs">
-        {TABS.map((tab) => (
+        {tabOrder.map((key) => (
           <button
-            key={tab.key}
-            className={`tab ${activeTab === tab.key ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab.key)}
+            key={key}
+            className={`tab ${activeTab === key ? 'active' : ''} ${dragOverTabId === key ? 'tab-drag-over' : ''}`}
+            draggable
+            onClick={() => setActiveTab(key)}
+            onDragStart={() => setDragTabId(key)}
+            onDragOver={(e) => { e.preventDefault(); setDragOverTabId(key); }}
+            onDragLeave={() => setDragOverTabId(null)}
+            onDrop={() => dropTab(key)}
           >
-            {tab.label}
+            {TAB_META[key]}
           </button>
         ))}
       </nav>
