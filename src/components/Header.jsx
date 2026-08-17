@@ -23,10 +23,31 @@ export default function Header({
   function handleFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = () => {
-      setCoverImage(reader.result);
-      setCoverPosition({ x: 50, y: 50 });
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 1600;
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        let quality = 0.85;
+        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+        // Keep shrinking quality if it's still large, so it reliably fits in localStorage.
+        while (dataUrl.length > 1_800_000 && quality > 0.4) {
+          quality -= 0.1;
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+
+        setCoverImage(dataUrl);
+        setCoverPosition({ x: 50, y: 50 });
+      };
+      img.src = reader.result;
     };
     reader.readAsDataURL(file);
     e.target.value = '';

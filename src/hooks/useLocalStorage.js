@@ -15,8 +15,11 @@ export function useLocalStorage(key, defaultValue) {
   useEffect(() => {
     try {
       localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // ignore quota errors
+    } catch (err) {
+      console.error(`Failed to save "${key}" to local storage:`, err);
+      if (err && err.name === 'QuotaExceededError') {
+        alert("This didn't save — your browser's local storage is full. Try a smaller image or clear some space.");
+      }
     }
   }, [key, value]);
 
