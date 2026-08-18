@@ -14,6 +14,7 @@ export default function Header({
   coverPosition, setCoverPosition,
   activeTab, setActiveTab,
   tabOrder, setTabOrder,
+  currentDate,
 }) {
   const fileRef = useRef(null);
   const coverRef = useRef(null);
@@ -91,7 +92,7 @@ export default function Header({
     setDragOverTabId(null);
   }
 
-  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const today = new Date(currentDate).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   return (
     <>

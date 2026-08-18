@@ -41,6 +41,7 @@ export default function App() {
   const [tabOrder, setTabOrder] = useLocalStorage('planner_tab_order', DEFAULT_TAB_ORDER);
   const [coverImage, setCoverImage] = useLocalStorage('planner_cover_image', null);
   const [coverPosition, setCoverPosition] = useLocalStorage('planner_cover_position', { x: 50, y: 50 });
+  const [currentDate, setCurrentDate] = useLocalStorage('planner_current_date', new Date().toISOString());
 
   const [habits, setHabits] = useLocalStorage('planner_habits', DEFAULT_HABITS);
   const [habitHistory, setHabitHistory] = useLocalStorage('planner_habit_history', []);
@@ -71,9 +72,9 @@ export default function App() {
   const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
   function beginNewDay() {
-    const todayKey = new Date().toISOString().split('T')[0];
+    const closingDateKey = currentDate.split('T')[0];
     const snapshot = habits.map((h) => ({ name: h.name, timeOfDay: h.timeOfDay, completed: h.completed }));
-    setHabitHistory([{ date: todayKey, snapshot }, ...habitHistory].slice(0, 14));
+    setHabitHistory([{ date: closingDateKey, snapshot }, ...habitHistory].slice(0, 14));
 
     const todaysWeekday = WEEKDAY_KEYS[new Date().getDay()];
     const baseHabits = habits.filter((h) => !h.fromWeekly).map((h) => ({ ...h, completed: false }));
@@ -81,6 +82,7 @@ export default function App() {
       .filter((w) => w.days.includes(todaysWeekday))
       .map((w) => ({ id: 'wh_' + w.id, name: w.name, timeOfDay: w.timeOfDay, completed: false, fromWeekly: true }));
     setHabits([...baseHabits, ...injected]);
+    setCurrentDate(new Date().toISOString());
 
     setScheduleTasks([]);
 
@@ -113,6 +115,7 @@ export default function App() {
         setActiveTab={setActiveTab}
         tabOrder={safeTabOrder}
         setTabOrder={setTabOrder}
+        currentDate={currentDate}
       />
 
       {activeTab === 'habits' && (
