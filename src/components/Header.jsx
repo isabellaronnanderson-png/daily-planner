@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ImagePlus, RefreshCw, X, Move } from 'lucide-react';
+import { ImagePlus, RefreshCw, X, Move, Pencil } from 'lucide-react';
 
 export const TAB_META = {
   habits: 'Habits',
@@ -15,11 +15,27 @@ export default function Header({
   activeTab, setActiveTab,
   tabOrder, setTabOrder,
   currentDate,
+  title, setTitle,
 }) {
   const fileRef = useRef(null);
   const coverRef = useRef(null);
+  const titleInputRef = useRef(null);
   const [dragTabId, setDragTabId] = useState(null);
   const [dragOverTabId, setDragOverTabId] = useState(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(title);
+
+  function startEditingTitle() {
+    setDraftTitle(title);
+    setIsEditingTitle(true);
+    setTimeout(() => titleInputRef.current?.focus(), 0);
+  }
+
+  function commitTitle() {
+    const trimmed = draftTitle.trim();
+    setTitle(trimmed || title);
+    setIsEditingTitle(false);
+  }
 
   function handleFile(e) {
     const file = e.target.files?.[0];
@@ -123,8 +139,27 @@ export default function Header({
       </div>
 
       <div className="header-block">
-        <div className="header-title-row">
-          <h1 className="header-title">isabella's planner</h1>
+        <div className="header-title-row title-group">
+          {isEditingTitle ? (
+            <input
+              ref={titleInputRef}
+              className="title-input"
+              value={draftTitle}
+              onChange={(e) => setDraftTitle(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); commitTitle(); }
+                if (e.key === 'Escape') { e.preventDefault(); setIsEditingTitle(false); }
+              }}
+            />
+          ) : (
+            <>
+              <h1 className="header-title">{title}</h1>
+              <button className="title-edit-btn" onClick={startEditingTitle} aria-label="Edit title">
+                <Pencil size={14} />
+              </button>
+            </>
+          )}
         </div>
         <p className="header-date">{today}</p>
       </div>

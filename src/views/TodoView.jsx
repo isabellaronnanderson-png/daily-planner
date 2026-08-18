@@ -199,37 +199,33 @@ export default function TodoView({
         </label>
       </div>
 
-      <div className="focus-grid">
+      <div className="focus-list">
         {[0, 1, 2].map((i) => {
           const item = focusItems[i];
           return (
             <div
               key={i}
-              className={`focus-slot ${item ? 'occupied' : ''} ${dragOverSlot === i ? 'drag-over' : ''}`}
+              className={`focus-row ${!item ? 'empty' : ''} ${dragOverSlot === i ? 'drag-over' : ''}`}
               onDragOver={(e) => { e.preventDefault(); setDragOverSlot(i); }}
               onDragLeave={() => setDragOverSlot(null)}
               onDrop={() => handleDropFocus(i)}
             >
               {item ? (
                 <>
-                  <div>
-                    <div className="focus-title">{item.name}</div>
-                    <div className="focus-meta">
-                      <CategoryTag category={item.category} />
-                      <span className="tag">{item.durationMins || 30}m</span>
-                      {item.dueDate && <span className="pill pill-red">Due {item.dueDate}</span>}
-                    </div>
+                  <div className="focus-row-left">
+                    <span className="focus-row-title">{item.name}</span>
+                    <CategoryTag category={item.category} />
+                    <span className="tag">{item.durationMins || 30}m</span>
+                    {item.dueDate && <span className="pill pill-red">Due {item.dueDate}</span>}
                   </div>
-                  <div className="focus-actions">
-                    <div className="focus-actions-left">
-                      <button className="btn" onClick={() => promoteToSchedule(item.id)}>Schedule</button>
-                      <button className="btn btn-primary" onClick={() => toggleTodo(item.id)}>Done</button>
-                    </div>
+                  <div className="focus-row-actions">
+                    <button className="btn" onClick={() => promoteToSchedule(item.id)}>Schedule</button>
+                    <button className="btn btn-primary" onClick={() => toggleTodo(item.id)}>Done</button>
                     <button className="btn-ghost btn-danger" onClick={() => removeFromFocus(item.id)}>Remove</button>
                   </div>
                 </>
               ) : (
-                <span className="focus-slot-empty">Drag a task here</span>
+                <span className="focus-row-empty-text">Drag a task here</span>
               )}
             </div>
           );
