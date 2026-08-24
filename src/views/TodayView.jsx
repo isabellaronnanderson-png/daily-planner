@@ -17,7 +17,7 @@ function hasWeekend(days) {
 }
 function dayBadges(days) {
   const labels = WEEKDAYS.filter((d) => days.includes(d.key)).map((d) => d.label);
-  if (hasWeekend(days)) labels.push('W (weekend)');
+  if (hasWeekend(days)) labels.push('W');
   return labels;
 }
 
@@ -83,7 +83,6 @@ export default function TodayView({
 }) {
   const [name, setName] = useState('');
   const [newTarget, setNewTarget] = useState(1);
-  const [newGroupId, setNewGroupId] = useState('');
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
 
@@ -108,10 +107,9 @@ export default function TodayView({
   function submitHabit(e) {
     e.preventDefault();
     if (!name.trim()) return;
-    addHabit({ name: name.trim(), targetCount: parseInt(newTarget, 10) || 1, groupId: newGroupId || null });
+    addHabit({ name: name.trim(), targetCount: parseInt(newTarget, 10) || 1 });
     setName('');
     setNewTarget(1);
-    setNewGroupId('');
   }
 
   function submitGroup(e) {
@@ -188,11 +186,20 @@ export default function TodayView({
       onDragStart: () => setDragId(h.id),
       onDragOver: (e) => { e.preventDefault(); setDragOverId(h.id); },
       onDragLeave: () => setDragOverId(null),
+      onDrop: (e) => {
+        e.stopPropagation();
+        if (dragId) reorderHabits(dragId, h.id, h.groupId || null);
+        setDragId(null);
+        setDragOverId(null);
+      },
+    };
+  }
+
+  function groupContainerDropProps(groupId) {
+    return {
+      onDragOver: (e) => e.preventDefault(),
       onDrop: () => {
-        if (dragId) {
-          const dragged = habits.find((x) => x.id === dragId);
-          if (dragged && dragged.groupId === h.groupId) reorderHabits(dragId, h.id);
-        }
+        if (dragId) reorderHabits(dragId, null, groupId || null);
         setDragId(null);
         setDragOverId(null);
       },
@@ -212,89 +219,12 @@ export default function TodayView({
         </div>
       </div>
 
-      {groups.map((group) => {
-        const items = habits.filter((h) => h.groupId === group.id);
-        return (
-          <div className="collapsible" key={group.id}>
-            <button className="collapsible-header" onClick={() => toggleGroupCollapsed(group.id)}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {group.collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
-                {group.name}
-                <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({items.length})</span>
-              </span>
-              <span
-                role="button"
-                tabIndex={0}
-                className="btn-ghost btn-danger"
-                style={{ fontSize: 11 }}
-                onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}
-              >
-                Remove group
-              </span>
-            </button>
-            {!group.collapsed && (
-              <div className="collapsible-body" style={{ padding: 0 }}>
-                {items.length === 0 ? (
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 16px' }}>No habits in this group yet.</p>
-                ) : (
-                  items.map((habit) => (
-                    <HabitRow
-                      key={habit.id}
-                      habit={habit}
-                      dragOver={dragOverId === habit.id}
-                      setHabitCount={setHabitCount}
-                      onEdit={() => openEdit(habit)}
-                      onDelete={() => deleteHabit(habit.id)}
-                      {...habitDragProps(habit)}
-                    />
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      <div className="day-list">
-        {groups.length > 0 && ungroupedHabits.length > 0 && (
-          <div style={{ padding: '8px 14px 0', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--text-muted)' }}>
-            Ungrouped
-          </div>
-        )}
-        {ungroupedHabits.map((habit) => (
-          <HabitRow
-            key={habit.id}
-            habit={habit}
-            dragOver={dragOverId === habit.id}
-            setHabitCount={setHabitCount}
-            onEdit={() => openEdit(habit)}
-            onDelete={() => deleteHabit(habit.id)}
-            {...habitDragProps(habit)}
-          />
-        ))}
-        {ungroupedHabits.length === 0 && groups.length === 0 && (
-          <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>No habits yet — add one below.</div>
-        )}
-      </div>
-
-      {addingGroup ? (
-        <form className="form-row" onSubmit={submitGroup} style={{ marginTop: -6 }}>
-          <input type="text" placeholder="Group name" value={groupName} onChange={(e) => setGroupName(e.target.value)} autoFocus />
-          <button type="submit" className="btn btn-primary">Add group</button>
-          <button type="button" className="btn" onClick={() => setAddingGroup(false)}>Cancel</button>
-        </form>
-      ) : (
-        <button className="btn" style={{ marginTop: -6, marginBottom: 20 }} onClick={() => setAddingGroup(true)}>
-          <Plus size={13} /> New group
-        </button>
-      )}
-
       {focusItems.length > 0 && (
-        <div className="collapsible" style={{ marginTop: 4 }}>
+        <div className="collapsible">
           <button className="collapsible-header" onClick={() => setTodoSectionCollapsed(!todoSectionCollapsed)}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {todoSectionCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
-              From your to-do list
+              Daily focus
               <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({focusItems.length})</span>
             </span>
           </button>
@@ -326,6 +256,83 @@ export default function TodayView({
             </div>
           )}
         </div>
+      )}
+
+      {groups.map((group) => {
+        const items = habits.filter((h) => h.groupId === group.id);
+        return (
+          <div className="collapsible" key={group.id}>
+            <button className="collapsible-header" onClick={() => toggleGroupCollapsed(group.id)}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {group.collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+                {group.name}
+                <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({items.length})</span>
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                className="btn-ghost btn-danger"
+                style={{ fontSize: 11 }}
+                onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}
+              >
+                Remove group
+              </span>
+            </button>
+            {!group.collapsed && (
+              <div className="collapsible-body" style={{ padding: 0 }} {...groupContainerDropProps(group.id)}>
+                {items.length === 0 ? (
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 16px' }}>No habits in this group yet — drag one here.</p>
+                ) : (
+                  items.map((habit) => (
+                    <HabitRow
+                      key={habit.id}
+                      habit={habit}
+                      dragOver={dragOverId === habit.id}
+                      setHabitCount={setHabitCount}
+                      onEdit={() => openEdit(habit)}
+                      onDelete={() => deleteHabit(habit.id)}
+                      {...habitDragProps(habit)}
+                    />
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      <div className="day-list" {...groupContainerDropProps(null)}>
+        {groups.length > 0 && ungroupedHabits.length > 0 && (
+          <div style={{ padding: '8px 14px 0', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--text-muted)' }}>
+            Ungrouped
+          </div>
+        )}
+        {ungroupedHabits.map((habit) => (
+          <HabitRow
+            key={habit.id}
+            habit={habit}
+            dragOver={dragOverId === habit.id}
+            setHabitCount={setHabitCount}
+            onEdit={() => openEdit(habit)}
+            onDelete={() => deleteHabit(habit.id)}
+            {...habitDragProps(habit)}
+          />
+        ))}
+        {ungroupedHabits.length === 0 && groups.length === 0 && (
+          <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>No habits yet — add one below.</div>
+        )}
+      </div>
+
+      {addingGroup ? (
+        <form className="form-row" onSubmit={submitGroup} style={{ marginTop: -6 }}>
+          <input type="text" placeholder="Group name" value={groupName} onChange={(e) => setGroupName(e.target.value)} autoFocus />
+          <button type="submit" className="btn btn-primary">Add group</button>
+          <button type="button" className="btn" onClick={() => setAddingGroup(false)}>Cancel</button>
+        </form>
+      ) : (
+        <button className="btn" style={{ marginTop: -6, marginBottom: 20 }} onClick={() => setAddingGroup(true)}>
+          <Plus size={13} /> New group
+        </button>
       )}
 
       <p className={`capacity-text ${overCapacity ? 'over' : ''}`}>
@@ -394,12 +401,6 @@ export default function TodayView({
           style={{ width: 56 }}
           title="How many times per day (e.g. 3 for 3 glasses of water)"
         />
-        <select value={newGroupId} onChange={(e) => setNewGroupId(e.target.value)}>
-          <option value="">No group</option>
-          {groups.map((g) => (
-            <option key={g.id} value={g.id}>{g.name}</option>
-          ))}
-        </select>
         <button type="submit" className="btn btn-primary">Add habit</button>
       </form>
 

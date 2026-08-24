@@ -185,7 +185,7 @@ export default function App() {
     const baseHabits = habits.filter((h) => !h.fromWeekly).map((h) => ({ ...h, completed: false, count: 0 }));
     const injected = weeklyHabits
       .filter((w) => w.days.includes(todaysWeekday))
-      .map((w) => ({ id: 'wh_' + w.id, name: w.name, completed: false, count: 0, targetCount: 1, groupId: null, fromWeekly: true }));
+      .map((w) => ({ id: 'wh_' + w.id, name: w.name, completed: false, count: 0, targetCount: 1, groupId: w.groupId || null, fromWeekly: true }));
     setHabits([...baseHabits, ...injected]);
     setCurrentDate(new Date().toISOString());
 
@@ -243,6 +243,10 @@ export default function App() {
         }))
       );
     }
+    if (habit.fromWeekly) {
+      const weeklyId = id.replace(/^wh_/, '');
+      setWeeklyHabits((prev) => prev.map((w) => (String(w.id) === weeklyId ? { ...w, groupId: updates.groupId || null } : w)));
+    }
   }
 
   function deleteHabit(id) {
@@ -258,8 +262,44 @@ export default function App() {
     }
   }
 
-  function reorderHabits(draggedId, targetId) {
-    setHabits((prev) => reorderById(prev, draggedId, targetId));
+  function reorderHabits(draggedId, targetId, targetGroupId) {
+    const dragged = habits.find((h) => h.id === draggedId);
+
+    setHabits((prev) => {
+      const draggedIdx = prev.findIndex((h) => h.id === draggedId);
+      if (draggedIdx === -1) return prev;
+      const list = [...prev];
+      const [removed] = list.splice(draggedIdx, 1);
+      const updatedDragged = { ...removed, groupId: targetGroupId || null };
+
+      if (targetId) {
+        const toIdx = list.findIndex((h) => h.id === targetId);
+        if (toIdx === -1) {
+          list.push(updatedDragged);
+        } else {
+          list.splice(toIdx, 0, updatedDragged);
+        }
+      } else {
+        // No specific target row — drop was on the group's empty space, so
+        // append after the last habit already in that group.
+        let insertAt = list.length;
+        for (let i = list.length - 1; i >= 0; i--) {
+          if ((list[i].groupId || null) === (targetGroupId || null)) {
+            insertAt = i + 1;
+            break;
+          }
+        }
+        list.splice(insertAt, 0, updatedDragged);
+      }
+      return list;
+    });
+
+    // Recurring day-specific habits remember whichever group they were last
+    // dragged into, so they respawn there each time they're injected.
+    if (dragged && dragged.fromWeekly) {
+      const weeklyId = draggedId.replace(/^wh_/, '');
+      setWeeklyHabits((prev) => prev.map((w) => (String(w.id) === weeklyId ? { ...w, groupId: targetGroupId || null } : w)));
+    }
   }
 
   // ---- Group actions ----
