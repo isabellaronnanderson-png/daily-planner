@@ -13,9 +13,9 @@ const DEFAULT_TAB_ORDER = ['habits', 'todo', 'chores', 'schedule', 'insights'];
 const DEFAULT_WEEKLY_HABITS = [];
 
 const DEFAULT_HABITS = [
-  { id: 'h1', name: 'Walk in the garden', completed: false },
-  { id: 'h2', name: 'Sip tea', completed: false },
-  { id: 'h3', name: 'Read a chapter', completed: false },
+  { id: 'h1', name: 'Walk in the garden', completed: false, count: 0, targetCount: 1, groupId: null },
+  { id: 'h2', name: 'Sip tea', completed: false, count: 0, targetCount: 1, groupId: null },
+  { id: 'h3', name: 'Read a chapter', completed: false, count: 0, targetCount: 1, groupId: null },
 ];
 
 const DEFAULT_TODOS = [
@@ -33,6 +33,16 @@ const DEFAULT_CHORES = [
 
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
+function reorderById(list, draggedId, targetId) {
+  const arr = [...list];
+  const fromIdx = arr.findIndex((x) => x.id === draggedId);
+  const toIdx = arr.findIndex((x) => x.id === targetId);
+  if (fromIdx === -1 || toIdx === -1) return list;
+  const [moved] = arr.splice(fromIdx, 1);
+  arr.splice(toIdx, 0, moved);
+  return arr;
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('habits');
   const [tabOrder, setTabOrder] = useLocalStorage('planner_tab_order', DEFAULT_TAB_ORDER);
@@ -44,7 +54,8 @@ export default function App() {
   const [habits, setHabits] = useLocalStorage('planner_habits', DEFAULT_HABITS);
   const [habitHistory, setHabitHistory] = useLocalStorage('planner_habit_history', []);
   const [weeklyHabits, setWeeklyHabits] = useLocalStorage('planner_weekly_habits', DEFAULT_WEEKLY_HABITS);
-  const [dayOrder, setDayOrder] = useLocalStorage('planner_day_order', []);
+  const [groups, setGroups] = useLocalStorage('planner_habit_groups', []);
+  const [todoSectionCollapsed, setTodoSectionCollapsed] = useLocalStorage('planner_todo_section_collapsed', false);
 
   const [scheduleTasks, setScheduleTasks] = useLocalStorage('planner_schedule', []);
 
@@ -80,21 +91,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keep the combined "Today" order in sync with whichever habits + focused
-  // todos currently exist, without disturbing any manual reordering.
-  useEffect(() => {
-    const validKeys = [
-      ...habits.map((h) => 'habit:' + h.id),
-      ...todos.filter((t) => t.isFocus && !t.completed).map((t) => 'todo:' + t.id),
-    ];
-    const kept = dayOrder.filter((k) => validKeys.includes(k));
-    const additions = validKeys.filter((k) => !dayOrder.includes(k));
-    if (additions.length > 0 || kept.length !== dayOrder.length) {
-      setDayOrder([...kept, ...additions]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [habits, todos]);
-
   function resetChore(id) {
     setChores(chores.map((c) => (c.id === id ? { ...c, lastDone: Date.now() } : c)));
   }
@@ -104,16 +100,92 @@ export default function App() {
     return day === 0 || day === 6 || isHolidayMode;
   }
 
+  function isChoreOverdueLocal(chore) {
+    const totalGoalMs = chore.freqVal * (chore.freqUnit === 'weeks' ? 7 : chore.freqUnit === 'months' ? 30 : 1) * 24 * 60 * 60 * 1000;
+    return Date.now() - chore.lastDone >= totalGoalMs;
+  }
+
+  // Pulls up to 3 tasks from the bank into focus, prioritizing work on
+  // workdays, boosting overdue chores and due-dated items, and topping up
+  // whichever category has been neglected lately. Only tops up to 3 total —
+  // it never removes anything the person already carried over or added by hand.
+  function autoFillFocus(todosList) {
+    let list = [...todosList];
+
+    // Make sure overdue chores have a bank entry so they're eligible to be pulled in.
+    chores.filter(isChoreOverdueLocal).forEach((chore) => {
+      const existing = list.find((t) => t.choreId === chore.id && !t.completed);
+      if (!existing) {
+        list.push({ id: 't_chore_' + chore.id + '_' + Date.now(), choreId: chore.id, name: chore.name, category: 'chores', durationMins: 30, dueDate: '', isFocus: false, completed: false, completedAt: null });
+      }
+    });
+
+    const weekendOrHoliday = isWeekendOrHoliday();
+    const isWorkday = !weekendOrHoliday;
+
+    let bankItems = list.filter((t) => !t.isFocus && !t.completed);
+    if (weekendOrHoliday) bankItems = bankItems.filter((t) => t.category !== 'work');
+
+    const completedTodos = list.filter((t) => t.completed);
+    const catCounts = { work: 0, admin: 0, errands: 0, chores: 0, personal: 0 };
+    completedTodos.forEach((t) => { if (catCounts[t.category] !== undefined) catCounts[t.category]++; });
+    const neglectedCat = Object.keys(catCounts).reduce((a, b) => (catCounts[a] < catCounts[b] ? a : b));
+
+    const scored = bankItems
+      .map((task) => {
+        let score = 0;
+        if (!weekendOrHoliday) {
+          if (task.category === 'work') score += 15;
+          if (task.category === 'admin') score += 10;
+          if (task.category === 'errands') score += 5;
+        }
+        if (task.dueDate) score += 20;
+        if (task.choreId) score += 8;
+        if (task.category === neglectedCat) score += 5;
+        return { id: task.id, score };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    const activeFocusItems = list.filter((t) => t.isFocus && !t.completed);
+    let workMins = activeFocusItems.filter((t) => t.category === 'work').reduce((s, i) => s + (i.durationMins || 30), 0);
+    let nonWorkMins = activeFocusItems.filter((t) => t.category !== 'work').reduce((s, i) => s + (i.durationMins || 30), 0);
+    let errandCount = activeFocusItems.filter((t) => t.category === 'errands').length;
+
+    for (const { id } of scored) {
+      const activeCount = list.filter((t) => t.isFocus && !t.completed).length;
+      if (activeCount >= 3) break;
+
+      const candidate = list.find((t) => t.id === id);
+      if (!candidate) continue;
+      const candidateMins = candidate.durationMins || 30;
+
+      if (isWorkday && candidate.category === 'errands' && errandCount >= 1) continue;
+
+      if (candidate.category === 'work') {
+        if (workMins + candidateMins <= 120) {
+          list = list.map((t) => (t.id === id ? { ...t, isFocus: true } : t));
+          workMins += candidateMins;
+        }
+      } else if (nonWorkMins + candidateMins <= 60) {
+        list = list.map((t) => (t.id === id ? { ...t, isFocus: true } : t));
+        nonWorkMins += candidateMins;
+        if (candidate.category === 'errands') errandCount++;
+      }
+    }
+
+    return list;
+  }
+
   function beginNewDay() {
     const closingDateKey = currentDate.split('T')[0];
     const snapshot = habits.map((h) => ({ name: h.name, completed: h.completed }));
     setHabitHistory([{ date: closingDateKey, snapshot }, ...habitHistory].slice(0, 14));
 
     const todaysWeekday = WEEKDAY_KEYS[new Date().getDay()];
-    const baseHabits = habits.filter((h) => !h.fromWeekly).map((h) => ({ ...h, completed: false }));
+    const baseHabits = habits.filter((h) => !h.fromWeekly).map((h) => ({ ...h, completed: false, count: 0 }));
     const injected = weeklyHabits
       .filter((w) => w.days.includes(todaysWeekday))
-      .map((w) => ({ id: 'wh_' + w.id, name: w.name, completed: false, fromWeekly: true }));
+      .map((w) => ({ id: 'wh_' + w.id, name: w.name, completed: false, count: 0, targetCount: 1, groupId: null, fromWeekly: true }));
     setHabits([...baseHabits, ...injected]);
     setCurrentDate(new Date().toISOString());
 
@@ -127,28 +199,52 @@ export default function App() {
     const fourteenDays = 14 * 24 * 60 * 60 * 1000;
     nextTodos = nextTodos.filter((t) => !(t.completed && t.completedAt && Date.now() - t.completedAt >= fourteenDays));
 
+    nextTodos = autoFillFocus(nextTodos);
+
     setTodos(nextTodos);
   }
 
-  // ---- Habit actions (lifted so history stays in sync immediately) ----
-  function addHabit(name) {
-    setHabits([...habits, { id: 'h_' + Date.now(), name, completed: false }]);
+  // ---- Habit actions ----
+  function addHabit({ name, targetCount = 1, groupId = null }) {
+    setHabits([...habits, { id: 'h_' + Date.now(), name, completed: false, count: 0, targetCount: Math.max(1, targetCount), groupId: groupId || null }]);
   }
-  function toggleHabit(id) {
-    setHabits(habits.map((h) => (h.id === id ? { ...h, completed: !h.completed } : h)));
-  }
-  function editHabit(id, newName) {
-    const habit = habits.find((h) => h.id === id);
-    if (!habit || !newName.trim() || newName.trim() === habit.name) return;
-    const trimmed = newName.trim();
-    setHabits(habits.map((h) => (h.id === id ? { ...h, name: trimmed } : h)));
-    setHabitHistory(
-      habitHistory.map((entry) => ({
-        ...entry,
-        snapshot: (entry.snapshot || []).map((item) => (item.name === habit.name ? { ...item, name: trimmed } : item)),
-      }))
+
+  // Click on the Nth mark: if it's already at that count, step back to just
+  // before it (uncheck); otherwise jump forward to fill through it.
+  function setHabitCount(id, newCount) {
+    setHabits(
+      habits.map((h) => {
+        if (h.id !== id) return h;
+        const target = h.targetCount || 1;
+        const clamped = Math.max(0, Math.min(target, newCount));
+        return { ...h, count: clamped, completed: clamped >= target };
+      })
     );
   }
+
+  function editHabit(id, updates) {
+    const habit = habits.find((h) => h.id === id);
+    if (!habit) return;
+    const trimmedName = (updates.name || '').trim();
+    if (!trimmedName) return;
+    const nextTarget = Math.max(1, updates.targetCount || 1);
+    setHabits(
+      habits.map((h) =>
+        h.id === id
+          ? { ...h, name: trimmedName, targetCount: nextTarget, count: Math.min(h.count || 0, nextTarget), groupId: updates.groupId || null }
+          : h
+      )
+    );
+    if (trimmedName !== habit.name) {
+      setHabitHistory(
+        habitHistory.map((entry) => ({
+          ...entry,
+          snapshot: (entry.snapshot || []).map((item) => (item.name === habit.name ? { ...item, name: trimmedName } : item)),
+        }))
+      );
+    }
+  }
+
   function deleteHabit(id) {
     const habit = habits.find((h) => h.id === id);
     setHabits(habits.filter((h) => h.id !== id));
@@ -160,6 +256,23 @@ export default function App() {
         }))
       );
     }
+  }
+
+  function reorderHabits(draggedId, targetId) {
+    setHabits((prev) => reorderById(prev, draggedId, targetId));
+  }
+
+  // ---- Group actions ----
+  function addGroup(name) {
+    if (!name.trim()) return;
+    setGroups([...groups, { id: 'g_' + Date.now(), name: name.trim(), collapsed: false }]);
+  }
+  function toggleGroupCollapsed(id) {
+    setGroups(groups.map((g) => (g.id === id ? { ...g, collapsed: !g.collapsed } : g)));
+  }
+  function deleteGroup(id) {
+    setGroups(groups.filter((g) => g.id !== id));
+    setHabits(habits.map((h) => (h.groupId === id ? { ...h, groupId: null } : h)));
   }
 
   // ---- Todo actions (lifted so both Today and To-do tabs share one source of truth) ----
@@ -185,35 +298,19 @@ export default function App() {
     setScheduleTasks((prev) => prev.filter((s) => s.todoId !== id));
   }
 
+  // No hard cap — focus is now just "what I've chosen to work on today."
   function makeFocus(id) {
-    setTodos((prev) => {
-      const activeCount = prev.filter((t) => t.isFocus && !t.completed).length;
-      const target = prev.find((t) => t.id === id);
-      if (!target || (!target.isFocus && activeCount >= 3)) {
-        if (activeCount >= 3) alert('Your three focus slots are full. Complete or remove one first.');
-        return prev;
-      }
-      return prev.map((t) => (t.id === id ? { ...t, isFocus: true } : t));
-    });
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, isFocus: true } : t)));
   }
 
   // Atomically find-or-create a todo for a chore, then focus it — avoids the
   // stale-state bug where creating and focusing in two steps could drop the item.
   function focusChore(chore) {
     setTodos((prev) => {
-      const activeCount = prev.filter((t) => t.isFocus && !t.completed).length;
       const existing = prev.find((t) => t.choreId === chore.id && !t.completed);
       if (existing) {
         if (existing.isFocus) return prev;
-        if (activeCount >= 3) {
-          alert('Your three focus slots are full. Complete or remove one first.');
-          return prev;
-        }
         return prev.map((t) => (t.id === existing.id ? { ...t, isFocus: true } : t));
-      }
-      if (activeCount >= 3) {
-        alert('Your three focus slots are full. Complete or remove one first.');
-        return prev;
       }
       return [
         ...prev,
@@ -224,6 +321,10 @@ export default function App() {
 
   function removeFromFocus(id) {
     setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, isFocus: false } : t)));
+  }
+
+  function reorderFocusTodos(draggedId, targetId) {
+    setTodos((prev) => reorderById(prev, draggedId, targetId));
   }
 
   function promoteToSchedule(id) {
@@ -274,20 +375,26 @@ export default function App() {
         <TodayView
           habits={habits}
           addHabit={addHabit}
-          toggleHabit={toggleHabit}
+          setHabitCount={setHabitCount}
           editHabit={editHabit}
           deleteHabit={deleteHabit}
+          reorderHabits={reorderHabits}
+          groups={groups}
+          addGroup={addGroup}
+          toggleGroupCollapsed={toggleGroupCollapsed}
+          deleteGroup={deleteGroup}
           onBeginNewDay={beginNewDay}
           weeklyHabits={weeklyHabits}
           setWeeklyHabits={setWeeklyHabits}
-          dayOrder={dayOrder}
-          setDayOrder={setDayOrder}
           todos={todos}
           toggleTodo={toggleTodo}
           removeFromFocus={removeFromFocus}
+          reorderFocusTodos={reorderFocusTodos}
           promoteToSchedule={promoteToSchedule}
           makeFocus={makeFocus}
           focusChore={focusChore}
+          todoSectionCollapsed={todoSectionCollapsed}
+          setTodoSectionCollapsed={setTodoSectionCollapsed}
           isHolidayMode={isHolidayMode}
           toggleHolidayMode={toggleHolidayMode}
           chores={chores}

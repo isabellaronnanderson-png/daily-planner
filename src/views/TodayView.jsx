@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Check, Square, X, Sparkles, ChevronDown, ChevronRight } from 'lucide-react';
+import { Check, Square, X, Sparkles, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import ActionMenu from '../components/ActionMenu';
 import CategoryTag from '../components/CategoryTag';
 
@@ -15,7 +15,6 @@ const WEEKEND_CHIP = { key: 'weekend', label: 'W' };
 function hasWeekend(days) {
   return days.includes('sat') && days.includes('sun');
 }
-
 function dayBadges(days) {
   const labels = WEEKDAYS.filter((d) => days.includes(d.key)).map((d) => d.label);
   if (hasWeekend(days)) labels.push('W (weekend)');
@@ -27,19 +26,73 @@ function isChoreOverdue(chore) {
   return Date.now() - chore.lastDone >= totalGoalMs;
 }
 
+function HabitRow({ habit, dragOver, onDragStart, onDragOver, onDragLeave, onDrop, setHabitCount, onEdit, onDelete }) {
+  const target = habit.targetCount || 1;
+  const count = habit.count || 0;
+
+  return (
+    <div
+      className={`day-row ${dragOver ? 'drag-over' : ''}`}
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      <div className="card-left">
+        {target <= 1 ? (
+          <button
+            className={`check-btn ${habit.completed ? '' : 'unchecked'}`}
+            onClick={() => setHabitCount(habit.id, count >= 1 ? 0 : 1)}
+            aria-label={habit.completed ? 'Mark incomplete' : 'Mark complete'}
+          >
+            {habit.completed ? <Check size={16} /> : <Square size={16} />}
+          </button>
+        ) : (
+          <div className="count-marks" role="group" aria-label={`${count} of ${target} done`}>
+            {Array.from({ length: target }).map((_, i) => (
+              <button
+                key={i}
+                className={`count-mark ${i < count ? 'filled' : ''}`}
+                onClick={() => setHabitCount(habit.id, count === i + 1 ? i : i + 1)}
+                aria-label={`Mark ${i + 1} of ${target}`}
+              />
+            ))}
+          </div>
+        )}
+        <span className={`card-label ${habit.completed ? 'completed-text' : ''}`}>
+          {habit.name}
+          {target > 1 && <span className="count-text"> {count}/{target}</span>}
+        </span>
+      </div>
+      <ActionMenu onEdit={onEdit} onDelete={onDelete} />
+    </div>
+  );
+}
+
 export default function TodayView({
-  habits, addHabit, toggleHabit, editHabit, deleteHabit,
+  habits, addHabit, setHabitCount, editHabit, deleteHabit, reorderHabits,
+  groups, addGroup, toggleGroupCollapsed, deleteGroup,
   onBeginNewDay,
   weeklyHabits, setWeeklyHabits,
-  dayOrder, setDayOrder,
-  todos, toggleTodo, removeFromFocus, promoteToSchedule, makeFocus, focusChore,
+  todos, toggleTodo, removeFromFocus, reorderFocusTodos, promoteToSchedule, makeFocus, focusChore,
+  todoSectionCollapsed, setTodoSectionCollapsed,
   isHolidayMode, toggleHolidayMode,
   chores, resetChore,
   scratchpad, setScratchpad,
 }) {
   const [name, setName] = useState('');
-  const [dragKey, setDragKey] = useState(null);
-  const [dragOverKey, setDragOverKey] = useState(null);
+  const [newTarget, setNewTarget] = useState(1);
+  const [newGroupId, setNewGroupId] = useState('');
+  const [dragId, setDragId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+
+  const [addingGroup, setAddingGroup] = useState(false);
+  const [groupName, setGroupName] = useState('');
+
+  const [editingHabit, setEditingHabit] = useState(null);
+  const [editDraft, setEditDraft] = useState({ name: '', targetCount: 1, groupId: '' });
+
   const [weeklyOpen, setWeeklyOpen] = useState(false);
   const [wName, setWName] = useState('');
   const [wDays, setWDays] = useState([]);
@@ -55,8 +108,28 @@ export default function TodayView({
   function submitHabit(e) {
     e.preventDefault();
     if (!name.trim()) return;
-    addHabit(name.trim());
+    addHabit({ name: name.trim(), targetCount: parseInt(newTarget, 10) || 1, groupId: newGroupId || null });
     setName('');
+    setNewTarget(1);
+    setNewGroupId('');
+  }
+
+  function submitGroup(e) {
+    e.preventDefault();
+    if (!groupName.trim()) return;
+    addGroup(groupName.trim());
+    setGroupName('');
+    setAddingGroup(false);
+  }
+
+  function openEdit(habit) {
+    setEditDraft({ name: habit.name, targetCount: habit.targetCount || 1, groupId: habit.groupId || '' });
+    setEditingHabit(habit);
+  }
+  function submitEdit(e) {
+    e.preventDefault();
+    editHabit(editingHabit.id, { name: editDraft.name, targetCount: parseInt(editDraft.targetCount, 10) || 1, groupId: editDraft.groupId || null });
+    setEditingHabit(null);
   }
 
   function toggleWDay(day) {
@@ -74,7 +147,6 @@ export default function TodayView({
     setWName('');
     setWDays([]);
   }
-
   function deleteWeeklyHabit(id) {
     setWeeklyHabits(weeklyHabits.filter((w) => w.id !== id));
   }
@@ -100,23 +172,6 @@ export default function TodayView({
     }
   }
 
-  function dropOn(targetKey) {
-    if (!dragKey || dragKey === targetKey) {
-      setDragKey(null);
-      setDragOverKey(null);
-      return;
-    }
-    const order = [...dayOrder];
-    const fromIdx = order.indexOf(dragKey);
-    const toIdx = order.indexOf(targetKey);
-    if (fromIdx === -1 || toIdx === -1) return;
-    order.splice(fromIdx, 1);
-    order.splice(toIdx, 0, dragKey);
-    setDayOrder(order);
-    setDragKey(null);
-    setDragOverKey(null);
-  }
-
   const focusItems = todos.filter((t) => t.isFocus && !t.completed);
   const workMins = focusItems.filter((t) => t.category === 'work').reduce((s, i) => s + (i.durationMins || 30), 0);
   const nonWorkMins = focusItems.filter((t) => t.category !== 'work').reduce((s, i) => s + (i.durationMins || 30), 0);
@@ -125,6 +180,24 @@ export default function TodayView({
   const overdueChores = chores.filter(isChoreOverdue);
   const urgentTodos = todos.filter((t) => !t.completed && t.dueDate).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 3);
   const showBanner = overdueChores.length > 0 || urgentTodos.length > 0;
+
+  const ungroupedHabits = habits.filter((h) => !h.groupId);
+
+  function habitDragProps(h) {
+    return {
+      onDragStart: () => setDragId(h.id),
+      onDragOver: (e) => { e.preventDefault(); setDragOverId(h.id); },
+      onDragLeave: () => setDragOverId(null),
+      onDrop: () => {
+        if (dragId) {
+          const dragged = habits.find((x) => x.id === dragId);
+          if (dragged && dragged.groupId === h.groupId) reorderHabits(dragId, h.id);
+        }
+        setDragId(null);
+        setDragOverId(null);
+      },
+    };
+  }
 
   return (
     <div className="view">
@@ -139,67 +212,121 @@ export default function TodayView({
         </div>
       </div>
 
-      <div className="day-list">
-        {dayOrder.map((key) => {
-          const [type, id] = key.split(':');
-          if (type === 'habit') {
-            const habit = habits.find((h) => h.id === id);
-            if (!habit) return null;
-            return (
-              <div
-                key={key}
-                className={`day-row ${dragOverKey === key ? 'drag-over' : ''}`}
-                draggable
-                onDragStart={() => setDragKey(key)}
-                onDragOver={(e) => { e.preventDefault(); setDragOverKey(key); }}
-                onDragLeave={() => setDragOverKey(null)}
-                onDrop={() => dropOn(key)}
+      {groups.map((group) => {
+        const items = habits.filter((h) => h.groupId === group.id);
+        return (
+          <div className="collapsible" key={group.id}>
+            <button className="collapsible-header" onClick={() => toggleGroupCollapsed(group.id)}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {group.collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+                {group.name}
+                <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({items.length})</span>
+              </span>
+              <span
+                role="button"
+                tabIndex={0}
+                className="btn-ghost btn-danger"
+                style={{ fontSize: 11 }}
+                onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}
               >
-                <div className="card-left">
-                  <button
-                    className={`check-btn ${habit.completed ? '' : 'unchecked'}`}
-                    onClick={() => toggleHabit(habit.id)}
-                    aria-label={habit.completed ? 'Mark incomplete' : 'Mark complete'}
-                  >
-                    {habit.completed ? <Check size={16} /> : <Square size={16} />}
-                  </button>
-                  <span className={`card-label ${habit.completed ? 'completed-text' : ''}`}>{habit.name}</span>
-                </div>
-                <ActionMenu
-                  onEdit={() => editHabit(habit.id, prompt('Edit habit', habit.name) || habit.name)}
-                  onDelete={() => deleteHabit(habit.id)}
-                />
+                Remove group
+              </span>
+            </button>
+            {!group.collapsed && (
+              <div className="collapsible-body" style={{ padding: 0 }}>
+                {items.length === 0 ? (
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 16px' }}>No habits in this group yet.</p>
+                ) : (
+                  items.map((habit) => (
+                    <HabitRow
+                      key={habit.id}
+                      habit={habit}
+                      dragOver={dragOverId === habit.id}
+                      setHabitCount={setHabitCount}
+                      onEdit={() => openEdit(habit)}
+                      onDelete={() => deleteHabit(habit.id)}
+                      {...habitDragProps(habit)}
+                    />
+                  ))
+                )}
               </div>
-            );
-          }
+            )}
+          </div>
+        );
+      })}
 
-          const todo = todos.find((t) => t.id === id && t.isFocus && !t.completed);
-          if (!todo) return null;
-          return (
-            <div
-              key={key}
-              className={`day-row day-row-todo ${dragOverKey === key ? 'drag-over' : ''}`}
-              draggable
-              onDragStart={() => setDragKey(key)}
-              onDragOver={(e) => { e.preventDefault(); setDragOverKey(key); }}
-              onDragLeave={() => setDragOverKey(null)}
-              onDrop={() => dropOn(key)}
-            >
-              <div className="card-left">
-                <span className="card-label" style={{ fontWeight: 500 }}>{todo.name}</span>
-                <CategoryTag category={todo.category} />
-                <span className="tag">{todo.durationMins || 30}m</span>
-                {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
-              </div>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                <button className="btn" onClick={() => promoteToSchedule(todo.id)}>Schedule</button>
-                <button className="btn btn-primary" onClick={() => toggleTodo(todo.id)}>Done</button>
-                <button className="btn-ghost btn-danger" onClick={() => removeFromFocus(todo.id)}>Remove</button>
-              </div>
-            </div>
-          );
-        })}
+      <div className="day-list">
+        {groups.length > 0 && ungroupedHabits.length > 0 && (
+          <div style={{ padding: '8px 14px 0', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--text-muted)' }}>
+            Ungrouped
+          </div>
+        )}
+        {ungroupedHabits.map((habit) => (
+          <HabitRow
+            key={habit.id}
+            habit={habit}
+            dragOver={dragOverId === habit.id}
+            setHabitCount={setHabitCount}
+            onEdit={() => openEdit(habit)}
+            onDelete={() => deleteHabit(habit.id)}
+            {...habitDragProps(habit)}
+          />
+        ))}
+        {ungroupedHabits.length === 0 && groups.length === 0 && (
+          <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>No habits yet — add one below.</div>
+        )}
       </div>
+
+      {addingGroup ? (
+        <form className="form-row" onSubmit={submitGroup} style={{ marginTop: -6 }}>
+          <input type="text" placeholder="Group name" value={groupName} onChange={(e) => setGroupName(e.target.value)} autoFocus />
+          <button type="submit" className="btn btn-primary">Add group</button>
+          <button type="button" className="btn" onClick={() => setAddingGroup(false)}>Cancel</button>
+        </form>
+      ) : (
+        <button className="btn" style={{ marginTop: -6, marginBottom: 20 }} onClick={() => setAddingGroup(true)}>
+          <Plus size={13} /> New group
+        </button>
+      )}
+
+      {focusItems.length > 0 && (
+        <div className="collapsible" style={{ marginTop: 4 }}>
+          <button className="collapsible-header" onClick={() => setTodoSectionCollapsed(!todoSectionCollapsed)}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {todoSectionCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+              From your to-do list
+              <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({focusItems.length})</span>
+            </span>
+          </button>
+          {!todoSectionCollapsed && (
+            <div className="collapsible-body" style={{ padding: 0 }}>
+              {focusItems.map((todo) => (
+                <div
+                  key={todo.id}
+                  className={`day-row day-row-todo ${dragOverId === todo.id ? 'drag-over' : ''}`}
+                  draggable
+                  onDragStart={() => setDragId(todo.id)}
+                  onDragOver={(e) => { e.preventDefault(); setDragOverId(todo.id); }}
+                  onDragLeave={() => setDragOverId(null)}
+                  onDrop={() => { if (dragId) reorderFocusTodos(dragId, todo.id); setDragId(null); setDragOverId(null); }}
+                >
+                  <div className="card-left">
+                    <span className="card-label" style={{ fontWeight: 500 }}>{todo.name}</span>
+                    <CategoryTag category={todo.category} />
+                    <span className="tag">{todo.durationMins || 30}m</span>
+                    {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                    <button className="btn" onClick={() => promoteToSchedule(todo.id)}>Schedule</button>
+                    <button className="btn btn-primary" onClick={() => toggleTodo(todo.id)}>Done</button>
+                    <button className="btn-ghost btn-danger" onClick={() => removeFromFocus(todo.id)}>Remove</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <p className={`capacity-text ${overCapacity ? 'over' : ''}`}>
         Focus workload: {(workMins / 60).toFixed(1)}h work / 2.0h max &middot; {(nonWorkMins / 60).toFixed(1)}h other / 1.0h max
@@ -236,14 +363,7 @@ export default function TodayView({
                       <Sparkles size={12} /> Focus
                     </button>
                   )}
-                  <button
-                    className="btn"
-                    onClick={() => {
-                      resetChore(chore.id);
-                    }}
-                  >
-                    Mark done
-                  </button>
+                  <button className="btn" onClick={() => resetChore(chore.id)}>Mark done</button>
                 </div>
               </div>
             );
@@ -266,6 +386,20 @@ export default function TodayView({
 
       <form className="form-row" onSubmit={submitHabit}>
         <input type="text" placeholder="Add a habit" value={name} onChange={(e) => setName(e.target.value)} required />
+        <input
+          type="number"
+          min="1"
+          value={newTarget}
+          onChange={(e) => setNewTarget(e.target.value)}
+          style={{ width: 56 }}
+          title="How many times per day (e.g. 3 for 3 glasses of water)"
+        />
+        <select value={newGroupId} onChange={(e) => setNewGroupId(e.target.value)}>
+          <option value="">No group</option>
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
+        </select>
         <button type="submit" className="btn btn-primary">Add habit</button>
       </form>
 
@@ -328,6 +462,47 @@ export default function TodayView({
           </div>
         )}
       </div>
+
+      {editingHabit && (
+        <div className="modal-backdrop" onClick={() => setEditingHabit(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Edit habit</h2>
+            <form onSubmit={submitEdit}>
+              <div className="modal-row">
+                <label>Name</label>
+                <input
+                  type="text"
+                  value={editDraft.name}
+                  onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })}
+                  autoFocus
+                />
+              </div>
+              <div className="modal-row">
+                <label>Times per day</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={editDraft.targetCount}
+                  onChange={(e) => setEditDraft({ ...editDraft, targetCount: e.target.value })}
+                />
+              </div>
+              <div className="modal-row">
+                <label>Group</label>
+                <select value={editDraft.groupId || ''} onChange={(e) => setEditDraft({ ...editDraft, groupId: e.target.value })}>
+                  <option value="">No group</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn" onClick={() => setEditingHabit(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

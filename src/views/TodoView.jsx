@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import ActionMenu from '../components/ActionMenu';
 import CategoryTag from '../components/CategoryTag';
@@ -9,6 +9,8 @@ export default function TodoView({ todos, setTodos, toggleTodo, editTodo, delete
   const catRef = useRef(null);
   const durRef = useRef(null);
   const dateRef = useRef(null);
+  const [editingTodo, setEditingTodo] = useState(null);
+  const [editName, setEditName] = useState('');
 
   function isWeekendOrHoliday() {
     const day = new Date().getDay();
@@ -90,7 +92,7 @@ export default function TodoView({ todos, setTodos, toggleTodo, editTodo, delete
                 <button className="btn" onClick={() => makeFocus(todo.id)}><Sparkles size={12} /> Focus</button>
                 <button className="btn btn-primary" onClick={() => toggleTodo(todo.id)}>Done</button>
                 <ActionMenu
-                  onEdit={() => editTodo(todo.id, prompt('Edit task', todo.name))}
+                  onEdit={() => { setEditingTodo(todo); setEditName(todo.name); }}
                   onDelete={() => deleteTodo(todo.id)}
                 />
               </div>
@@ -114,6 +116,30 @@ export default function TodoView({ todos, setTodos, toggleTodo, editTodo, delete
           ))}
         </div>
       </div>
+
+      {editingTodo && (
+        <div className="modal-backdrop" onClick={() => setEditingTodo(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Edit task</h2>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                editTodo(editingTodo.id, editName);
+                setEditingTodo(null);
+              }}
+            >
+              <div className="modal-row">
+                <label>Name</label>
+                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} autoFocus />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn" onClick={() => setEditingTodo(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

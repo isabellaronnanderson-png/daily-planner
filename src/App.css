@@ -482,6 +482,27 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
   text-decoration: line-through;
   opacity: 0.55;
 }
+.count-marks {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.count-mark {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  background: var(--bg);
+  padding: 0;
+}
+.count-mark.filled {
+  background: var(--text);
+  border-color: var(--text);
+}
+.count-text {
+  color: var(--text-muted);
+  font-size: 12px;
+}
 
 /* ===== Focus slots ===== */
 .focus-list {
