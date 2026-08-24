@@ -1,26 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import Header from './components/Header';
-import HabitsView from './views/HabitsView';
-import WeekendView from './views/WeekendView';
+import TodayView from './views/TodayView';
 import ScheduleView from './views/ScheduleView';
 import TodoView from './views/TodoView';
 import ChoresView from './views/ChoresView';
+import InsightsView from './views/InsightsView';
 import './App.css';
 
-const DEFAULT_TAB_ORDER = ['habits', 'weekend', 'todo', 'chores', 'schedule'];
+const DEFAULT_TAB_ORDER = ['habits', 'todo', 'chores', 'schedule', 'insights'];
 
 const DEFAULT_WEEKLY_HABITS = [];
 
 const DEFAULT_HABITS = [
-  { id: 'h1', name: 'Walk in the garden', timeOfDay: 'morning', completed: false },
-  { id: 'h2', name: 'Sip tea', timeOfDay: 'afternoon', completed: false },
-  { id: 'h3', name: 'Read a chapter', timeOfDay: 'evening', completed: false },
-];
-
-const DEFAULT_WEEKEND = [
-  { id: 'w1', name: 'Visit farmers market', day: 'saturday', completed: false },
-  { id: 'w2', name: 'Organize closet', day: 'sunday', completed: false },
+  { id: 'h1', name: 'Walk in the garden', completed: false },
+  { id: 'h2', name: 'Sip tea', completed: false },
+  { id: 'h3', name: 'Read a chapter', completed: false },
 ];
 
 const DEFAULT_TODOS = [
@@ -36,6 +31,8 @@ const DEFAULT_CHORES = [
   { id: 4, name: 'Replace toothbrush head', group: 'health', freqVal: 3, freqUnit: 'months', lastDone: Date.now() - 89 * 24 * 60 * 60 * 1000 },
 ];
 
+const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('habits');
   const [tabOrder, setTabOrder] = useLocalStorage('planner_tab_order', DEFAULT_TAB_ORDER);
@@ -47,9 +44,7 @@ export default function App() {
   const [habits, setHabits] = useLocalStorage('planner_habits', DEFAULT_HABITS);
   const [habitHistory, setHabitHistory] = useLocalStorage('planner_habit_history', []);
   const [weeklyHabits, setWeeklyHabits] = useLocalStorage('planner_weekly_habits', DEFAULT_WEEKLY_HABITS);
-
-  const [weekendTasks, setWeekendTasks] = useLocalStorage('planner_weekend', DEFAULT_WEEKEND);
-  const [weekendHistory, setWeekendHistory] = useLocalStorage('planner_weekend_history', []);
+  const [dayOrder, setDayOrder] = useLocalStorage('planner_day_order', []);
 
   const [scheduleTasks, setScheduleTasks] = useLocalStorage('planner_schedule', []);
 
@@ -59,7 +54,46 @@ export default function App() {
 
   const [chores, setChores] = useLocalStorage('planner_chores', DEFAULT_CHORES);
 
-  const safeTabOrder = [...tabOrder, ...DEFAULT_TAB_ORDER.filter((k) => !tabOrder.includes(k))];
+  const safeTabOrder = [...tabOrder, ...DEFAULT_TAB_ORDER.filter((k) => !tabOrder.includes(k))].filter((k) => k !== 'weekend');
+
+  // One-time migration: fold any existing separate weekend tasks into
+  // day-specific habits tagged for Saturday + Sunday, then retire the old data.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('planner_weekend');
+      const alreadyMigrated = localStorage.getItem('planner_weekend_migrated');
+      if (raw && !alreadyMigrated) {
+        const oldWeekend = JSON.parse(raw);
+        if (Array.isArray(oldWeekend) && oldWeekend.length > 0) {
+          setWeeklyHabits((prev) => {
+            const existingNames = new Set(prev.map((w) => w.name));
+            const additions = oldWeekend
+              .filter((w) => w && w.name && !existingNames.has(w.name))
+              .map((w, i) => ({ id: Date.now() + i, name: w.name, days: ['sat', 'sun'] }));
+            return [...prev, ...additions];
+          });
+        }
+        localStorage.setItem('planner_weekend_migrated', 'true');
+      }
+      // eslint-disable-next-line no-empty
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keep the combined "Today" order in sync with whichever habits + focused
+  // todos currently exist, without disturbing any manual reordering.
+  useEffect(() => {
+    const validKeys = [
+      ...habits.map((h) => 'habit:' + h.id),
+      ...todos.filter((t) => t.isFocus && !t.completed).map((t) => 'todo:' + t.id),
+    ];
+    const kept = dayOrder.filter((k) => validKeys.includes(k));
+    const additions = validKeys.filter((k) => !dayOrder.includes(k));
+    if (additions.length > 0 || kept.length !== dayOrder.length) {
+      setDayOrder([...kept, ...additions]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [habits, todos]);
 
   function resetChore(id) {
     setChores(chores.map((c) => (c.id === id ? { ...c, lastDone: Date.now() } : c)));
@@ -70,18 +104,16 @@ export default function App() {
     return day === 0 || day === 6 || isHolidayMode;
   }
 
-  const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-
   function beginNewDay() {
     const closingDateKey = currentDate.split('T')[0];
-    const snapshot = habits.map((h) => ({ name: h.name, timeOfDay: h.timeOfDay, completed: h.completed }));
+    const snapshot = habits.map((h) => ({ name: h.name, completed: h.completed }));
     setHabitHistory([{ date: closingDateKey, snapshot }, ...habitHistory].slice(0, 14));
 
     const todaysWeekday = WEEKDAY_KEYS[new Date().getDay()];
     const baseHabits = habits.filter((h) => !h.fromWeekly).map((h) => ({ ...h, completed: false }));
     const injected = weeklyHabits
       .filter((w) => w.days.includes(todaysWeekday))
-      .map((w) => ({ id: 'wh_' + w.id, name: w.name, timeOfDay: w.timeOfDay, completed: false, fromWeekly: true }));
+      .map((w) => ({ id: 'wh_' + w.id, name: w.name, completed: false, fromWeekly: true }));
     setHabits([...baseHabits, ...injected]);
     setCurrentDate(new Date().toISOString());
 
@@ -98,11 +130,128 @@ export default function App() {
     setTodos(nextTodos);
   }
 
-  function resetWeekend() {
-    const todayKey = new Date().toISOString().split('T')[0];
-    const snapshot = weekendTasks.map((w) => ({ name: w.name, day: w.day, completed: w.completed }));
-    setWeekendHistory([{ date: todayKey, snapshot }, ...weekendHistory].slice(0, 12));
-    setWeekendTasks(weekendTasks.map((w) => ({ ...w, completed: false })));
+  // ---- Habit actions (lifted so history stays in sync immediately) ----
+  function addHabit(name) {
+    setHabits([...habits, { id: 'h_' + Date.now(), name, completed: false }]);
+  }
+  function toggleHabit(id) {
+    setHabits(habits.map((h) => (h.id === id ? { ...h, completed: !h.completed } : h)));
+  }
+  function editHabit(id, newName) {
+    const habit = habits.find((h) => h.id === id);
+    if (!habit || !newName.trim() || newName.trim() === habit.name) return;
+    const trimmed = newName.trim();
+    setHabits(habits.map((h) => (h.id === id ? { ...h, name: trimmed } : h)));
+    setHabitHistory(
+      habitHistory.map((entry) => ({
+        ...entry,
+        snapshot: (entry.snapshot || []).map((item) => (item.name === habit.name ? { ...item, name: trimmed } : item)),
+      }))
+    );
+  }
+  function deleteHabit(id) {
+    const habit = habits.find((h) => h.id === id);
+    setHabits(habits.filter((h) => h.id !== id));
+    if (habit) {
+      setHabitHistory(
+        habitHistory.map((entry) => ({
+          ...entry,
+          snapshot: (entry.snapshot || []).filter((item) => item.name !== habit.name),
+        }))
+      );
+    }
+  }
+
+  // ---- Todo actions (lifted so both Today and To-do tabs share one source of truth) ----
+  function toggleTodo(id) {
+    setTodos((prev) =>
+      prev.map((t) => {
+        if (t.id !== id) return t;
+        const nextDone = !t.completed;
+        if (nextDone && t.choreId) resetChore(t.choreId);
+        return { ...t, completed: nextDone, completedAt: nextDone ? Date.now() : null, isFocus: false };
+      })
+    );
+    setScheduleTasks((prev) => prev.map((s) => (s.todoId === id ? { ...s, completed: !s.completed } : s)));
+  }
+
+  function editTodo(id, newName) {
+    if (!newName || !newName.trim()) return;
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, name: newName.trim() } : t)));
+  }
+
+  function deleteTodo(id) {
+    setTodos((prev) => prev.filter((t) => t.id !== id));
+    setScheduleTasks((prev) => prev.filter((s) => s.todoId !== id));
+  }
+
+  function makeFocus(id) {
+    setTodos((prev) => {
+      const activeCount = prev.filter((t) => t.isFocus && !t.completed).length;
+      const target = prev.find((t) => t.id === id);
+      if (!target || (!target.isFocus && activeCount >= 3)) {
+        if (activeCount >= 3) alert('Your three focus slots are full. Complete or remove one first.');
+        return prev;
+      }
+      return prev.map((t) => (t.id === id ? { ...t, isFocus: true } : t));
+    });
+  }
+
+  // Atomically find-or-create a todo for a chore, then focus it — avoids the
+  // stale-state bug where creating and focusing in two steps could drop the item.
+  function focusChore(chore) {
+    setTodos((prev) => {
+      const activeCount = prev.filter((t) => t.isFocus && !t.completed).length;
+      const existing = prev.find((t) => t.choreId === chore.id && !t.completed);
+      if (existing) {
+        if (existing.isFocus) return prev;
+        if (activeCount >= 3) {
+          alert('Your three focus slots are full. Complete or remove one first.');
+          return prev;
+        }
+        return prev.map((t) => (t.id === existing.id ? { ...t, isFocus: true } : t));
+      }
+      if (activeCount >= 3) {
+        alert('Your three focus slots are full. Complete or remove one first.');
+        return prev;
+      }
+      return [
+        ...prev,
+        { id: 't_' + Date.now(), choreId: chore.id, name: chore.name, category: 'chores', durationMins: 30, dueDate: '', isFocus: true, completed: false, completedAt: null },
+      ];
+    });
+  }
+
+  function removeFromFocus(id) {
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, isFocus: false } : t)));
+  }
+
+  function promoteToSchedule(id) {
+    const target = todos.find((t) => t.id === id);
+    if (!target) return;
+    const existing = scheduleTasks.find((s) => s.todoId === id);
+    if (!existing) {
+      const now = new Date();
+      let h = now.getHours();
+      let m = now.getMinutes();
+      if (m > 0 && m <= 30) m = 30; else { m = 0; h += 1; }
+      if (h < 7) { h = 7; m = 0; }
+      if (h > 18) { h = 18; m = 0; }
+      const topPx = Math.max(0, Math.min(660, (h - 7) * 60 + m));
+      setScheduleTasks([
+        ...scheduleTasks,
+        { id: 's_' + Date.now(), todoId: target.id, name: target.name, topPx, durationMins: target.durationMins || 30, category: target.category || 'personal', completed: target.completed },
+      ]);
+    }
+    setActiveTab('schedule');
+  }
+
+  function toggleHolidayMode() {
+    const next = !isHolidayMode;
+    setIsHolidayMode(next);
+    if (next) {
+      setTodos(todos.map((t) => (t.isFocus && t.category === 'work' ? { ...t, isFocus: false } : t)));
+    }
   }
 
   return (
@@ -122,17 +271,30 @@ export default function App() {
       />
 
       {activeTab === 'habits' && (
-        <HabitsView
+        <TodayView
           habits={habits}
-          setHabits={setHabits}
-          habitHistory={habitHistory}
+          addHabit={addHabit}
+          toggleHabit={toggleHabit}
+          editHabit={editHabit}
+          deleteHabit={deleteHabit}
           onBeginNewDay={beginNewDay}
           weeklyHabits={weeklyHabits}
           setWeeklyHabits={setWeeklyHabits}
+          dayOrder={dayOrder}
+          setDayOrder={setDayOrder}
+          todos={todos}
+          toggleTodo={toggleTodo}
+          removeFromFocus={removeFromFocus}
+          promoteToSchedule={promoteToSchedule}
+          makeFocus={makeFocus}
+          focusChore={focusChore}
+          isHolidayMode={isHolidayMode}
+          toggleHolidayMode={toggleHolidayMode}
+          chores={chores}
+          resetChore={resetChore}
+          scratchpad={scratchpad}
+          setScratchpad={setScratchpad}
         />
-      )}
-      {activeTab === 'weekend' && (
-        <WeekendView tasks={weekendTasks} setTasks={setWeekendTasks} history={weekendHistory} onResetWeekend={resetWeekend} />
       )}
       {activeTab === 'schedule' && (
         <ScheduleView tasks={scheduleTasks} setTasks={setScheduleTasks} />
@@ -141,19 +303,18 @@ export default function App() {
         <TodoView
           todos={todos}
           setTodos={setTodos}
+          toggleTodo={toggleTodo}
+          editTodo={editTodo}
+          deleteTodo={deleteTodo}
+          makeFocus={makeFocus}
           isHolidayMode={isHolidayMode}
-          setIsHolidayMode={setIsHolidayMode}
-          scheduleTasks={scheduleTasks}
-          setScheduleTasks={setScheduleTasks}
-          chores={chores}
-          resetChore={resetChore}
-          scratchpad={scratchpad}
-          setScratchpad={setScratchpad}
-          goToSchedule={() => setActiveTab('schedule')}
         />
       )}
       {activeTab === 'chores' && (
         <ChoresView chores={chores} setChores={setChores} resetChore={resetChore} />
+      )}
+      {activeTab === 'insights' && (
+        <InsightsView habits={habits} habitHistory={habitHistory} todos={todos} />
       )}
     </div>
   );

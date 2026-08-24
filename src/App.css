@@ -456,6 +456,33 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
   background: var(--navy);
 }
 
+/* ===== Combined Today list ===== */
+.day-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 0.75rem;
+}
+.day-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  transition: background-color 0.15s;
+  cursor: grab;
+}
+.day-row:active { cursor: grabbing; }
+.day-row:last-child { border-bottom: none; }
+.day-row.drag-over { background: var(--navy-bg); }
+.day-row-todo {
+  background: var(--navy-bg);
+}
+.completed-text {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
 /* ===== Focus slots ===== */
 .focus-list {
   display: flex;

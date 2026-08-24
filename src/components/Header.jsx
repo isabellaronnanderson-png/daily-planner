@@ -2,11 +2,11 @@ import { useRef, useState } from 'react';
 import { ImagePlus, RefreshCw, X, Move, Pencil } from 'lucide-react';
 
 export const TAB_META = {
-  habits: 'Habits',
-  weekend: 'Weekend',
+  habits: 'Today',
   todo: 'To-do',
   chores: 'Chores',
   schedule: 'Schedule',
+  insights: 'Insights',
 };
 
 export default function Header({
