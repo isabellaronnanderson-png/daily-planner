@@ -39,7 +39,11 @@ function HabitRow({ habit, dragOver, onDragStart, onDragOver, onDragLeave, onDro
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <div className="card-left">
+      <span className={`card-label ${habit.completed ? 'completed-text' : ''}`} style={{ flex: 1, minWidth: 0 }}>
+        {habit.name}
+        {target > 1 && <span className="count-text"> {count}/{target}</span>}
+      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
         {target <= 1 ? (
           <button
             className={`check-btn ${habit.completed ? '' : 'unchecked'}`}
@@ -60,12 +64,8 @@ function HabitRow({ habit, dragOver, onDragStart, onDragOver, onDragLeave, onDro
             ))}
           </div>
         )}
-        <span className={`card-label ${habit.completed ? 'completed-text' : ''}`}>
-          {habit.name}
-          {target > 1 && <span className="count-text"> {count}/{target}</span>}
-        </span>
+        <ActionMenu onEdit={onEdit} onDelete={onDelete} />
       </div>
-      <ActionMenu onEdit={onEdit} onDelete={onDelete} />
     </div>
   );
 }
@@ -80,6 +80,7 @@ export default function TodayView({
   isHolidayMode, toggleHolidayMode,
   chores, resetChore,
   scratchpad, setScratchpad,
+  renameGroup, reorderGroups,
 }) {
   const [name, setName] = useState('');
   const [newTarget, setNewTarget] = useState(1);
@@ -88,6 +89,10 @@ export default function TodayView({
 
   const [addingGroup, setAddingGroup] = useState(false);
   const [groupName, setGroupName] = useState('');
+  const [groupDragId, setGroupDragId] = useState(null);
+  const [groupDragOverId, setGroupDragOverId] = useState(null);
+  const [editingGroupId, setEditingGroupId] = useState(null);
+  const [groupEditName, setGroupEditName] = useState('');
 
   const [editingHabit, setEditingHabit] = useState(null);
   const [editDraft, setEditDraft] = useState({ name: '', targetCount: 1, groupId: '' });
@@ -118,6 +123,15 @@ export default function TodayView({
     addGroup(groupName.trim());
     setGroupName('');
     setAddingGroup(false);
+  }
+
+  function startEditGroup(group) {
+    setGroupEditName(group.name);
+    setEditingGroupId(group.id);
+  }
+  function commitEditGroup(id) {
+    if (groupEditName.trim()) renameGroup(id, groupEditName.trim());
+    setEditingGroupId(null);
   }
 
   function openEdit(habit) {
@@ -261,23 +275,65 @@ export default function TodayView({
       {groups.map((group) => {
         const items = habits.filter((h) => h.groupId === group.id);
         return (
-          <div className="collapsible" key={group.id}>
-            <button className="collapsible-header" onClick={() => toggleGroupCollapsed(group.id)}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div
+            className={`collapsible ${groupDragOverId === group.id ? 'group-drag-over' : ''}`}
+            key={group.id}
+            draggable={editingGroupId !== group.id}
+            onDragStart={() => setGroupDragId(group.id)}
+            onDragOver={(e) => { e.preventDefault(); setGroupDragOverId(group.id); }}
+            onDragLeave={() => setGroupDragOverId(null)}
+            onDrop={() => {
+              if (groupDragId) reorderGroups(groupDragId, group.id);
+              setGroupDragId(null);
+              setGroupDragOverId(null);
+            }}
+          >
+            <div className="collapsible-header group-header">
+              <span
+                style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, cursor: 'pointer' }}
+                onClick={() => toggleGroupCollapsed(group.id)}
+              >
                 {group.collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
-                {group.name}
+                {editingGroupId === group.id ? (
+                  <input
+                    type="text"
+                    className="group-name-input"
+                    value={groupEditName}
+                    onChange={(e) => setGroupEditName(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onBlur={() => commitEditGroup(group.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); commitEditGroup(group.id); }
+                      if (e.key === 'Escape') { e.preventDefault(); setEditingGroupId(null); }
+                    }}
+                    autoFocus
+                  />
+                ) : (
+                  <span>{group.name}</span>
+                )}
                 <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({items.length})</span>
               </span>
-              <span
-                role="button"
-                tabIndex={0}
-                className="btn-ghost btn-danger"
-                style={{ fontSize: 11 }}
-                onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}
-              >
-                Remove group
+              <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="btn-ghost"
+                  style={{ fontSize: 11 }}
+                  onClick={(e) => { e.stopPropagation(); startEditGroup(group); }}
+                >
+                  Rename
+                </span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="btn-ghost btn-danger"
+                  style={{ fontSize: 11 }}
+                  onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}
+                >
+                  Remove group
+                </span>
               </span>
-            </button>
+            </div>
             {!group.collapsed && (
               <div className="collapsible-body" style={{ padding: 0 }} {...groupContainerDropProps(group.id)}>
                 {items.length === 0 ? (

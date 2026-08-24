@@ -314,6 +314,13 @@ export default function App() {
     setGroups(groups.filter((g) => g.id !== id));
     setHabits(habits.map((h) => (h.groupId === id ? { ...h, groupId: null } : h)));
   }
+  function renameGroup(id, newName) {
+    if (!newName.trim()) return;
+    setGroups(groups.map((g) => (g.id === id ? { ...g, name: newName.trim() } : g)));
+  }
+  function reorderGroups(draggedId, targetId) {
+    setGroups((prev) => reorderById(prev, draggedId, targetId));
+  }
 
   // ---- Todo actions (lifted so both Today and To-do tabs share one source of truth) ----
   function toggleTodo(id) {
@@ -423,6 +430,8 @@ export default function App() {
           addGroup={addGroup}
           toggleGroupCollapsed={toggleGroupCollapsed}
           deleteGroup={deleteGroup}
+          renameGroup={renameGroup}
+          reorderGroups={reorderGroups}
           onBeginNewDay={beginNewDay}
           weeklyHabits={weeklyHabits}
           setWeeklyHabits={setWeeklyHabits}

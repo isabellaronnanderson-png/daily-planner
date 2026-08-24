@@ -846,6 +846,24 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
 .collapsible-body {
   padding: 1rem;
 }
+.group-header {
+  cursor: default;
+}
+.group-drag-over {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+.group-name-input {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  border: none;
+  border-bottom: 1px solid var(--border-strong);
+  padding: 0 0 1px;
+  background: transparent;
+  outline: none;
+  min-width: 100px;
+}
 .weekday-row {
   display: flex;
   gap: 6px;
