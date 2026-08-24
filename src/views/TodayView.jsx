@@ -9,9 +9,18 @@ const WEEKDAYS = [
   { key: 'wed', label: 'W' },
   { key: 'thu', label: 'T' },
   { key: 'fri', label: 'F' },
-  { key: 'sat', label: 'S' },
-  { key: 'sun', label: 'S' },
 ];
+const WEEKEND_CHIP = { key: 'weekend', label: 'W' };
+
+function hasWeekend(days) {
+  return days.includes('sat') && days.includes('sun');
+}
+
+function dayBadges(days) {
+  const labels = WEEKDAYS.filter((d) => days.includes(d.key)).map((d) => d.label);
+  if (hasWeekend(days)) labels.push('W (weekend)');
+  return labels;
+}
 
 function isChoreOverdue(chore) {
   const totalGoalMs = chore.freqVal * (chore.freqUnit === 'weeks' ? 7 : chore.freqUnit === 'months' ? 30 : 1) * 24 * 60 * 60 * 1000;
@@ -51,6 +60,10 @@ export default function TodayView({
   }
 
   function toggleWDay(day) {
+    if (day === 'weekend') {
+      setWDays((prev) => (hasWeekend(prev) ? prev.filter((d) => d !== 'sat' && d !== 'sun') : [...prev, 'sat', 'sun']));
+      return;
+    }
     setWDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
   }
 
@@ -126,53 +139,6 @@ export default function TodayView({
         </div>
       </div>
 
-      {showBanner && (
-        <div className="banner">
-          <h3>Needs attention</h3>
-          {overdueChores.map((chore) => {
-            const existing = todos.find((t) => t.choreId === chore.id && !t.completed);
-            return (
-              <div className="suggestion-pill" key={chore.id}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{chore.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--red)' }}>Chore is due</div>
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {existing && existing.isFocus ? (
-                    <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>In focus</span>
-                  ) : (
-                    <button className="btn" onClick={() => focusChore(chore)}>
-                      <Sparkles size={12} /> Focus
-                    </button>
-                  )}
-                  <button
-                    className="btn"
-                    onClick={() => {
-                      resetChore(chore.id);
-                    }}
-                  >
-                    Mark done
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-          {urgentTodos.map((task) => (
-            <div className="suggestion-pill" key={task.id}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{task.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--red)' }}>Due {task.dueDate}</div>
-              </div>
-              {task.isFocus ? (
-                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>In focus</span>
-              ) : (
-                <button className="btn" onClick={() => makeFocus(task.id)}><Sparkles size={12} /> Focus</button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
       <div className="day-list">
         {dayOrder.map((key) => {
           const [type, id] = key.split(':');
@@ -239,6 +205,65 @@ export default function TodayView({
         Focus workload: {(workMins / 60).toFixed(1)}h work / 2.0h max &middot; {(nonWorkMins / 60).toFixed(1)}h other / 1.0h max
       </p>
 
+      <div className="scratchpad-box">
+        <h4>Scratchpad</h4>
+        <textarea
+          ref={textareaRef}
+          className="scratchpad-textarea"
+          placeholder="Rough notes for today..."
+          value={scratchpad}
+          onChange={(e) => setScratchpad(e.target.value)}
+          onKeyDown={handleScratchpadKeyDown}
+        />
+      </div>
+
+      {showBanner && (
+        <div className="banner">
+          <h3>Needs attention</h3>
+          {overdueChores.map((chore) => {
+            const existing = todos.find((t) => t.choreId === chore.id && !t.completed);
+            return (
+              <div className="suggestion-pill" key={chore.id}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>{chore.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--red)' }}>Chore is due</div>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {existing && existing.isFocus ? (
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>In focus</span>
+                  ) : (
+                    <button className="btn" onClick={() => focusChore(chore)}>
+                      <Sparkles size={12} /> Focus
+                    </button>
+                  )}
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      resetChore(chore.id);
+                    }}
+                  >
+                    Mark done
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {urgentTodos.map((task) => (
+            <div className="suggestion-pill" key={task.id}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{task.name}</div>
+                <div style={{ fontSize: 11, color: 'var(--red)' }}>Due {task.dueDate}</div>
+              </div>
+              {task.isFocus ? (
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>In focus</span>
+              ) : (
+                <button className="btn" onClick={() => makeFocus(task.id)}><Sparkles size={12} /> Focus</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       <form className="form-row" onSubmit={submitHabit}>
         <input type="text" placeholder="Add a habit" value={name} onChange={(e) => setName(e.target.value)} required />
         <button type="submit" className="btn btn-primary">Add habit</button>
@@ -269,6 +294,14 @@ export default function TodayView({
                     {d.label}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  className={`weekday-chip ${hasWeekend(wDays) ? 'selected' : ''}`}
+                  onClick={() => toggleWDay('weekend')}
+                  title="Weekend (Saturday & Sunday)"
+                >
+                  {WEEKEND_CHIP.label}
+                </button>
                 <button type="submit" className="btn btn-primary" style={{ marginLeft: 8 }}>Add</button>
               </div>
             </form>
@@ -281,8 +314,8 @@ export default function TodayView({
                   <div className="weekly-habit-info">
                     <span style={{ fontSize: 13 }}>{w.name}</span>
                     <div className="weekly-habit-days">
-                      {WEEKDAYS.filter((d) => w.days.includes(d.key)).map((d) => (
-                        <span key={d.key}>{d.label}</span>
+                      {dayBadges(w.days).map((label) => (
+                        <span key={label}>{label}</span>
                       ))}
                     </div>
                   </div>
@@ -294,18 +327,6 @@ export default function TodayView({
             )}
           </div>
         )}
-      </div>
-
-      <div className="scratchpad-box">
-        <h4>Scratchpad</h4>
-        <textarea
-          ref={textareaRef}
-          className="scratchpad-textarea"
-          placeholder="Rough notes for today..."
-          value={scratchpad}
-          onChange={(e) => setScratchpad(e.target.value)}
-          onKeyDown={handleScratchpadKeyDown}
-        />
       </div>
     </div>
   );
