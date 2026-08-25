@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Check, Square, X, Sparkles, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import ActionMenu from '../components/ActionMenu';
-import CategoryTag from '../components/CategoryTag';
+import DailyNote from '../components/DailyNote';
 
 const WEEKDAYS = [
   { key: 'mon', label: 'M' },
@@ -43,10 +43,11 @@ function HabitRow({ habit, dragOver, onDragStart, onDragOver, onDragLeave, onDro
         {habit.name}
         {target > 1 && <span className="count-text"> {count}/{target}</span>}
       </span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+      <div className="day-row-actions" draggable={false} onDragStart={(e) => e.stopPropagation()}>
         {target <= 1 ? (
           <button
             className={`check-btn ${habit.completed ? '' : 'unchecked'}`}
+            draggable={false}
             onClick={() => setHabitCount(habit.id, count >= 1 ? 0 : 1)}
             aria-label={habit.completed ? 'Mark incomplete' : 'Mark complete'}
           >
@@ -58,6 +59,7 @@ function HabitRow({ habit, dragOver, onDragStart, onDragOver, onDragLeave, onDro
               <button
                 key={i}
                 className={`count-mark ${i < count ? 'filled' : ''}`}
+                draggable={false}
                 onClick={() => setHabitCount(habit.id, count === i + 1 ? i : i + 1)}
                 aria-label={`Mark ${i + 1} of ${target}`}
               />
@@ -81,6 +83,7 @@ export default function TodayView({
   chores, resetChore,
   scratchpad, setScratchpad,
   renameGroup, reorderGroups,
+  dailyNoteText, setDailyNoteText, dailyNoteImage, setDailyNoteImage,
 }) {
   const [name, setName] = useState('');
   const [newTarget, setNewTarget] = useState(1);
@@ -222,6 +225,8 @@ export default function TodayView({
 
   return (
     <div className="view">
+      <DailyNote text={dailyNoteText} setText={setDailyNoteText} image={dailyNoteImage} setImage={setDailyNoteImage} />
+
       <div className="section-row">
         <h2 className="section-title">Today</h2>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -256,13 +261,11 @@ export default function TodayView({
                 >
                   <div className="card-left">
                     <span className="card-label" style={{ fontWeight: 500 }}>{todo.name}</span>
-                    <CategoryTag category={todo.category} />
-                    <span className="tag">{todo.durationMins || 30}m</span>
                     {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
                   </div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                    <button className="btn" onClick={() => promoteToSchedule(todo.id)}>Schedule</button>
-                    <button className="btn btn-primary" onClick={() => toggleTodo(todo.id)}>Done</button>
+                  <div className="day-row-actions" draggable={false} onDragStart={(e) => e.stopPropagation()}>
+                    <button className="btn btn-sm" onClick={() => promoteToSchedule(todo.id)}>Schedule</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => toggleTodo(todo.id)}>Done</button>
                     <button className="btn-ghost btn-danger" onClick={() => removeFromFocus(todo.id)}>Remove</button>
                   </div>
                 </div>

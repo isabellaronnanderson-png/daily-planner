@@ -335,10 +335,12 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
 .check-btn {
   background: none;
   border: none;
-  padding: 0;
+  padding: 6px;
+  margin: -6px;
   display: flex;
   color: var(--text);
   flex-shrink: 0;
+  cursor: pointer;
 }
 .check-btn.unchecked {
   color: var(--border-strong);
@@ -484,16 +486,17 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
 }
 .count-marks {
   display: flex;
-  gap: 4px;
+  gap: 8px;
   flex-shrink: 0;
 }
 .count-mark {
-  width: 15px;
-  height: 15px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   border: 1.5px solid var(--border-strong);
   background: var(--bg);
   padding: 0;
+  cursor: pointer;
 }
 .count-mark.filled {
   background: var(--text);
@@ -502,6 +505,94 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
 .count-text {
   color: var(--text-muted);
   font-size: 12px;
+}
+.day-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.btn-sm {
+  padding: 4px 9px;
+  font-size: 11.5px;
+}
+
+/* ===== Daily note (quote/photo widget) ===== */
+.daily-note-empty {
+  width: 100%;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 14px;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+.daily-note-empty:hover {
+  background: var(--surface);
+  color: var(--text-secondary);
+}
+.daily-note {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.1rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+.daily-note-img {
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  display: block;
+  margin-bottom: 10px;
+}
+.daily-note-text {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 16px;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.4;
+}
+.daily-note-edit-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(255,255,255,0.85);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  padding: 5px;
+  display: flex;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.daily-note:hover .daily-note-edit-btn {
+  opacity: 1;
+}
+.daily-note-editing {
+  text-align: left;
+}
+.daily-note-img-wrap {
+  position: relative;
+  margin-bottom: 10px;
+}
+.daily-note-img-wrap .daily-note-img {
+  margin-bottom: 0;
+}
+.daily-note-remove-img {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+.daily-note-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 /* ===== Focus slots ===== */

@@ -62,6 +62,8 @@ export default function App() {
   const [todos, setTodos] = useLocalStorage('planner_todos', DEFAULT_TODOS);
   const [isHolidayMode, setIsHolidayMode] = useLocalStorage('planner_holiday_mode', false);
   const [scratchpad, setScratchpad] = useLocalStorage('planner_scratchpad', '');
+  const [dailyNoteText, setDailyNoteText] = useLocalStorage('planner_daily_note_text', '');
+  const [dailyNoteImage, setDailyNoteImage] = useLocalStorage('planner_daily_note_image', null);
 
   const [chores, setChores] = useLocalStorage('planner_chores', DEFAULT_CHORES);
 
@@ -450,6 +452,10 @@ export default function App() {
           resetChore={resetChore}
           scratchpad={scratchpad}
           setScratchpad={setScratchpad}
+          dailyNoteText={dailyNoteText}
+          setDailyNoteText={setDailyNoteText}
+          dailyNoteImage={dailyNoteImage}
+          setDailyNoteImage={setDailyNoteImage}
         />
       )}
       {activeTab === 'schedule' && (
@@ -470,7 +476,7 @@ export default function App() {
         <ChoresView chores={chores} setChores={setChores} resetChore={resetChore} />
       )}
       {activeTab === 'insights' && (
-        <InsightsView habits={habits} habitHistory={habitHistory} todos={todos} />
+        <InsightsView habits={habits} habitHistory={habitHistory} todos={todos} groups={groups} weeklyHabits={weeklyHabits} />
       )}
     </div>
   );

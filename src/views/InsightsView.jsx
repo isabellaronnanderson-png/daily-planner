@@ -1,6 +1,6 @@
 import { CATEGORIES } from '../data/categories';
 
-export default function InsightsView({ habits, habitHistory, todos }) {
+export default function InsightsView({ habits, habitHistory, todos, groups, weeklyHabits }) {
   const stats = {};
   habits.forEach((h) => { stats[h.name] = { completed: 0, total: 0 }; });
   habitHistory.forEach((entry) => {
@@ -10,6 +10,52 @@ export default function InsightsView({ habits, habitHistory, todos }) {
       if (item.completed) stats[item.name].completed += 1;
     });
   });
+
+  // Match each tracked habit name to its current group — checking today's
+  // live habit list first, then falling back to the day-specific habit's
+  // remembered group for names that aren't injected today.
+  function groupIdFor(name) {
+    const live = habits.find((h) => h.name === name);
+    if (live) return live.groupId || null;
+    const weekly = weeklyHabits.find((w) => w.name === name);
+    if (weekly) return weekly.groupId || null;
+    return null;
+  }
+
+  const names = Object.keys(stats);
+  const byGroup = {};
+  const ungrouped = [];
+  names.forEach((n) => {
+    const gid = groupIdFor(n);
+    if (gid) {
+      if (!byGroup[gid]) byGroup[gid] = [];
+      byGroup[gid].push(n);
+    } else {
+      ungrouped.push(n);
+    }
+  });
+
+  function renderRows(list) {
+    return (
+      <div className="history-grid" style={{ marginTop: 10 }}>
+        {list.map((n) => {
+          const s = stats[n];
+          const pct = s.total > 0 ? Math.round((s.completed / s.total) * 100) : 0;
+          return (
+            <div className="history-row" key={n}>
+              <div className="history-label-row">
+                <span>{n}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{pct}%</span>
+              </div>
+              <div className="history-bar-bg">
+                <div className="history-bar-fill" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   const completedTodos = todos.filter((t) => t.completed);
   const catCounts = { work: 0, admin: 0, errands: 0, chores: 0, personal: 0 };
@@ -33,23 +79,24 @@ export default function InsightsView({ habits, habitHistory, todos }) {
             Click "Begin a new day" on the Today tab to start tracking your consistency over time.
           </p>
         ) : (
-          <div className="history-grid" style={{ marginTop: 10 }}>
-            {Object.keys(stats).map((n) => {
-              const s = stats[n];
-              const pct = s.total > 0 ? Math.round((s.completed / s.total) * 100) : 0;
+          <>
+            {groups.map((g) => {
+              const list = byGroup[g.id];
+              if (!list || list.length === 0) return null;
               return (
-                <div className="history-row" key={n}>
-                  <div className="history-label-row">
-                    <span>{n}</span>
-                    <span style={{ color: 'var(--text-secondary)' }}>{pct}%</span>
-                  </div>
-                  <div className="history-bar-bg">
-                    <div className="history-bar-fill" style={{ width: `${pct}%` }} />
-                  </div>
+                <div key={g.id}>
+                  <div className="history-subhead">{g.name}</div>
+                  {renderRows(list)}
                 </div>
               );
             })}
-          </div>
+            {ungrouped.length > 0 && (
+              <div>
+                {groups.length > 0 && <div className="history-subhead">Ungrouped</div>}
+                {renderRows(ungrouped)}
+              </div>
+            )}
+          </>
         )}
       </div>
 
