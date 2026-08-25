@@ -42,6 +42,7 @@ function HabitRow({ habit, dragOver, onDragStart, onDragOver, onDragLeave, onDro
       <span className={`card-label ${habit.completed ? 'completed-text' : ''}`} style={{ flex: 1, minWidth: 0 }}>
         {habit.name}
         {target > 1 && <span className="count-text"> {count}/{target}</span>}
+        {habit.cadence === 'week' && <span className="pill pill-muted" style={{ marginLeft: 8 }}>Weekly</span>}
       </span>
       <div className="day-row-actions" draggable={false} onDragStart={(e) => e.stopPropagation()}>
         {target <= 1 ? (
@@ -87,6 +88,7 @@ export default function TodayView({
 }) {
   const [name, setName] = useState('');
   const [newTarget, setNewTarget] = useState(1);
+  const [newWeekly, setNewWeekly] = useState(false);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
 
@@ -98,7 +100,7 @@ export default function TodayView({
   const [groupEditName, setGroupEditName] = useState('');
 
   const [editingHabit, setEditingHabit] = useState(null);
-  const [editDraft, setEditDraft] = useState({ name: '', targetCount: 1, groupId: '' });
+  const [editDraft, setEditDraft] = useState({ name: '', targetCount: 1, groupId: '', cadence: 'day' });
 
   const [weeklyOpen, setWeeklyOpen] = useState(false);
   const [wName, setWName] = useState('');
@@ -115,9 +117,10 @@ export default function TodayView({
   function submitHabit(e) {
     e.preventDefault();
     if (!name.trim()) return;
-    addHabit({ name: name.trim(), targetCount: parseInt(newTarget, 10) || 1 });
+    addHabit({ name: name.trim(), targetCount: parseInt(newTarget, 10) || 1, cadence: newWeekly ? 'week' : 'day' });
     setName('');
     setNewTarget(1);
+    setNewWeekly(false);
   }
 
   function submitGroup(e) {
@@ -138,12 +141,12 @@ export default function TodayView({
   }
 
   function openEdit(habit) {
-    setEditDraft({ name: habit.name, targetCount: habit.targetCount || 1, groupId: habit.groupId || '' });
+    setEditDraft({ name: habit.name, targetCount: habit.targetCount || 1, groupId: habit.groupId || '', cadence: habit.cadence || 'day' });
     setEditingHabit(habit);
   }
   function submitEdit(e) {
     e.preventDefault();
-    editHabit(editingHabit.id, { name: editDraft.name, targetCount: parseInt(editDraft.targetCount, 10) || 1, groupId: editDraft.groupId || null });
+    editHabit(editingHabit.id, { name: editDraft.name, targetCount: parseInt(editDraft.targetCount, 10) || 1, groupId: editDraft.groupId || null, cadence: editDraft.cadence });
     setEditingHabit(null);
   }
 
@@ -458,10 +461,17 @@ export default function TodayView({
           value={newTarget}
           onChange={(e) => setNewTarget(e.target.value)}
           style={{ width: 56 }}
-          title="How many times per day (e.g. 3 for 3 glasses of water)"
+          title={newWeekly ? 'How many times per week' : 'How many times per day (e.g. 3 for 3 glasses of water)'}
         />
+        <label className="toggle-pill">
+          <input type="checkbox" checked={newWeekly} onChange={(e) => setNewWeekly(e.target.checked)} />
+          Weekly goal
+        </label>
         <button type="submit" className="btn btn-primary">Add habit</button>
       </form>
+      <p style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: -14, marginBottom: 20 }}>
+        A weekly goal carries over all week and only resets once a new week starts — missing a day won't count against it.
+      </p>
 
       <div className="collapsible">
         <button className="collapsible-header" onClick={() => setWeeklyOpen((o) => !o)}>
@@ -538,7 +548,17 @@ export default function TodayView({
                 />
               </div>
               <div className="modal-row">
-                <label>Times per day</label>
+                <label className="toggle-pill" style={{ width: 'fit-content' }}>
+                  <input
+                    type="checkbox"
+                    checked={editDraft.cadence === 'week'}
+                    onChange={(e) => setEditDraft({ ...editDraft, cadence: e.target.checked ? 'week' : 'day' })}
+                  />
+                  Weekly goal
+                </label>
+              </div>
+              <div className="modal-row">
+                <label>{editDraft.cadence === 'week' ? 'Times per week' : 'Times per day'}</label>
                 <input
                   type="number"
                   min="1"

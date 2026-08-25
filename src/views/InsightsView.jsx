@@ -2,7 +2,7 @@ import { CATEGORIES } from '../data/categories';
 
 export default function InsightsView({ habits, habitHistory, todos, groups, weeklyHabits }) {
   const stats = {};
-  habits.forEach((h) => { stats[h.name] = { completed: 0, total: 0 }; });
+  habits.filter((h) => h.cadence !== 'week').forEach((h) => { stats[h.name] = { completed: 0, total: 0 }; });
   habitHistory.forEach((entry) => {
     (entry.snapshot || []).forEach((item) => {
       if (!stats[item.name]) stats[item.name] = { completed: 0, total: 0 };

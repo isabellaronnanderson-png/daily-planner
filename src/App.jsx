@@ -32,6 +32,11 @@ const DEFAULT_CHORES = [
 ];
 
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const WEEK_EPOCH = new Date('2024-01-01T00:00:00Z').getTime(); // a Monday
+function weekKeyFor(dateIso) {
+  const t = new Date(dateIso).getTime();
+  return Math.floor((t - WEEK_EPOCH) / (7 * 24 * 60 * 60 * 1000));
+}
 
 function reorderById(list, draggedId, targetId) {
   const arr = [...list];
@@ -49,6 +54,7 @@ export default function App() {
   const [coverImage, setCoverImage] = useLocalStorage('planner_cover_image', null);
   const [coverPosition, setCoverPosition] = useLocalStorage('planner_cover_position', { x: 50, y: 50 });
   const [currentDate, setCurrentDate] = useLocalStorage('planner_current_date', new Date().toISOString());
+  const [weekKey, setWeekKey] = useLocalStorage('planner_week_key', weekKeyFor(new Date().toISOString()));
   const [title, setTitle] = useLocalStorage('planner_title', "isabella's planner");
 
   const [habits, setHabits] = useLocalStorage('planner_habits', DEFAULT_HABITS);
@@ -197,16 +203,30 @@ export default function App() {
 
   function beginNewDay() {
     const closingDateKey = currentDate.split('T')[0];
-    const snapshot = habits.map((h) => ({ name: h.name, completed: h.completed }));
+    // Weekly-goal habits aren't day-by-day — leave them out of the daily
+    // consistency snapshot entirely so a mid-week gap never reads as a miss.
+    const snapshot = habits.filter((h) => h.cadence !== 'week').map((h) => ({ name: h.name, completed: h.completed }));
     setHabitHistory([{ date: closingDateKey, snapshot }, ...habitHistory].slice(0, 14));
 
+    const newWeekKey = weekKeyFor(new Date().toISOString());
+    const isNewWeek = newWeekKey !== weekKey;
+
     const todaysWeekday = WEEKDAY_KEYS[new Date().getDay()];
-    const baseHabits = habits.filter((h) => !h.fromWeekly).map((h) => ({ ...h, completed: false, count: 0 }));
+    const baseHabits = habits
+      .filter((h) => !h.fromWeekly)
+      .map((h) => {
+        if (h.cadence === 'week') {
+          // Carry over untouched until a new week begins.
+          return isNewWeek ? { ...h, completed: false, count: 0 } : h;
+        }
+        return { ...h, completed: false, count: 0 };
+      });
     const injected = weeklyHabits
       .filter((w) => w.days.includes(todaysWeekday))
       .map((w) => ({ id: 'wh_' + w.id, name: w.name, completed: false, count: 0, targetCount: 1, groupId: w.groupId || null, fromWeekly: true }));
     setHabits([...baseHabits, ...injected]);
     setCurrentDate(new Date().toISOString());
+    if (isNewWeek) setWeekKey(newWeekKey);
 
     setScheduleTasks([]);
 
@@ -224,8 +244,8 @@ export default function App() {
   }
 
   // ---- Habit actions ----
-  function addHabit({ name, targetCount = 1, groupId = null }) {
-    setHabits([...habits, { id: 'h_' + Date.now(), name, completed: false, count: 0, targetCount: Math.max(1, targetCount), groupId: groupId || null }]);
+  function addHabit({ name, targetCount = 1, groupId = null, cadence = 'day' }) {
+    setHabits([...habits, { id: 'h_' + Date.now(), name, completed: false, count: 0, targetCount: Math.max(1, targetCount), groupId: groupId || null, cadence }]);
   }
 
   // Click on the Nth mark: if it's already at that count, step back to just
@@ -250,7 +270,7 @@ export default function App() {
     setHabits(
       habits.map((h) =>
         h.id === id
-          ? { ...h, name: trimmedName, targetCount: nextTarget, count: Math.min(h.count || 0, nextTarget), groupId: updates.groupId || null }
+          ? { ...h, name: trimmedName, targetCount: nextTarget, count: Math.min(h.count || 0, nextTarget), groupId: updates.groupId || null, cadence: updates.cadence || 'day' }
           : h
       )
     );
