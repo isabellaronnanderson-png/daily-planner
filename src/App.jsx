@@ -93,6 +93,23 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Keep habit history clean: if a name no longer belongs to any current
+  // habit or day-specific habit definition, it was deleted — drop it from
+  // history too (including any stragglers left over from before this existed).
+  useEffect(() => {
+    const validNames = new Set([...habits.map((h) => h.name), ...weeklyHabits.map((w) => w.name)]);
+    setHabitHistory((prev) => {
+      let changed = false;
+      const next = prev.map((entry) => {
+        const filtered = (entry.snapshot || []).filter((item) => validNames.has(item.name));
+        if (filtered.length !== (entry.snapshot || []).length) changed = true;
+        return { ...entry, snapshot: filtered };
+      });
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [habits, weeklyHabits]);
+
   function resetChore(id) {
     setChores(chores.map((c) => (c.id === id ? { ...c, lastDone: Date.now() } : c)));
   }
