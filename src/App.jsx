@@ -37,6 +37,10 @@ function weekKeyFor(dateIso) {
   const t = new Date(dateIso).getTime();
   return Math.floor((t - WEEK_EPOCH) / (7 * 24 * 60 * 60 * 1000));
 }
+function monthKeyFor(dateIso) {
+  const d = new Date(dateIso);
+  return `${d.getFullYear()}-${d.getMonth()}`;
+}
 
 function reorderById(list, draggedId, targetId) {
   const arr = [...list];
@@ -55,6 +59,7 @@ export default function App() {
   const [coverPosition, setCoverPosition] = useLocalStorage('planner_cover_position', { x: 50, y: 50 });
   const [currentDate, setCurrentDate] = useLocalStorage('planner_current_date', new Date().toISOString());
   const [weekKey, setWeekKey] = useLocalStorage('planner_week_key', weekKeyFor(new Date().toISOString()));
+  const [monthKey, setMonthKey] = useLocalStorage('planner_month_key', monthKeyFor(new Date().toISOString()));
   const [title, setTitle] = useLocalStorage('planner_title', "isabella's planner");
 
   const [habits, setHabits] = useLocalStorage('planner_habits', DEFAULT_HABITS);
@@ -203,13 +208,24 @@ export default function App() {
 
   function beginNewDay() {
     const closingDateKey = currentDate.split('T')[0];
-    // Weekly-goal habits aren't day-by-day — leave them out of the daily
-    // consistency snapshot entirely so a mid-week gap never reads as a miss.
-    const snapshot = habits.filter((h) => h.cadence !== 'week').map((h) => ({ name: h.name, completed: h.completed }));
-    setHabitHistory([{ date: closingDateKey, snapshot }, ...habitHistory].slice(0, 14));
 
     const newWeekKey = weekKeyFor(new Date().toISOString());
     const isNewWeek = newWeekKey !== weekKey;
+    const newMonthKey = monthKeyFor(new Date().toISOString());
+    const isNewMonth = newMonthKey !== monthKey;
+
+    // Daily habits are logged every day. Weekly/monthly goals only get a
+    // history entry on the day their cycle actually closes, so consistency
+    // reflects "how often the whole week/month got done" rather than
+    // punishing every day it wasn't finished yet.
+    const snapshot = habits
+      .filter((h) => {
+        if (h.cadence === 'week') return isNewWeek;
+        if (h.cadence === 'month') return isNewMonth;
+        return true;
+      })
+      .map((h) => ({ name: h.name, completed: h.completed }));
+    setHabitHistory([{ date: closingDateKey, snapshot }, ...habitHistory].slice(0, 14));
 
     const todaysWeekday = WEEKDAY_KEYS[new Date().getDay()];
     const baseHabits = habits
@@ -219,6 +235,10 @@ export default function App() {
           // Carry over untouched until a new week begins.
           return isNewWeek ? { ...h, completed: false, count: 0 } : h;
         }
+        if (h.cadence === 'month') {
+          // Carry over untouched until a new calendar month begins.
+          return isNewMonth ? { ...h, completed: false, count: 0 } : h;
+        }
         return { ...h, completed: false, count: 0 };
       });
     const injected = weeklyHabits
@@ -227,6 +247,7 @@ export default function App() {
     setHabits([...baseHabits, ...injected]);
     setCurrentDate(new Date().toISOString());
     if (isNewWeek) setWeekKey(newWeekKey);
+    if (isNewMonth) setMonthKey(newMonthKey);
 
     setScheduleTasks([]);
 

@@ -21,6 +21,12 @@ function dayBadges(days) {
   return labels;
 }
 
+const DAY_ORDER_INDEX = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 5 };
+function firstDayIndex(days) {
+  if (!days || days.length === 0) return 6;
+  return Math.min(...days.map((d) => DAY_ORDER_INDEX[d] ?? 6));
+}
+
 function isChoreOverdue(chore) {
   const totalGoalMs = chore.freqVal * (chore.freqUnit === 'weeks' ? 7 : chore.freqUnit === 'months' ? 30 : 1) * 24 * 60 * 60 * 1000;
   return Date.now() - chore.lastDone >= totalGoalMs;
@@ -43,6 +49,7 @@ function HabitRow({ habit, dragOver, onDragStart, onDragOver, onDragLeave, onDro
         {habit.name}
         {target > 1 && <span className="count-text"> {count}/{target}</span>}
         {habit.cadence === 'week' && <span className="pill pill-muted" style={{ marginLeft: 8 }}>Weekly</span>}
+        {habit.cadence === 'month' && <span className="pill pill-muted" style={{ marginLeft: 8 }}>Monthly</span>}
       </span>
       <div className="day-row-actions" draggable={false} onDragStart={(e) => e.stopPropagation()}>
         {target <= 1 ? (
@@ -88,7 +95,7 @@ export default function TodayView({
 }) {
   const [name, setName] = useState('');
   const [newTarget, setNewTarget] = useState(1);
-  const [newWeekly, setNewWeekly] = useState(false);
+  const [newCadence, setNewCadence] = useState('day');
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
 
@@ -117,10 +124,10 @@ export default function TodayView({
   function submitHabit(e) {
     e.preventDefault();
     if (!name.trim()) return;
-    addHabit({ name: name.trim(), targetCount: parseInt(newTarget, 10) || 1, cadence: newWeekly ? 'week' : 'day' });
+    addHabit({ name: name.trim(), targetCount: parseInt(newTarget, 10) || 1, cadence: newCadence });
     setName('');
     setNewTarget(1);
-    setNewWeekly(false);
+    setNewCadence('day');
   }
 
   function submitGroup(e) {
@@ -432,7 +439,15 @@ export default function TodayView({
                       <Sparkles size={12} /> Focus
                     </button>
                   )}
-                  <button className="btn" onClick={() => resetChore(chore.id)}>Mark done</button>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      if (existing) toggleTodo(existing.id);
+                      else resetChore(chore.id);
+                    }}
+                  >
+                    Mark done
+                  </button>
                 </div>
               </div>
             );
@@ -461,17 +476,20 @@ export default function TodayView({
           value={newTarget}
           onChange={(e) => setNewTarget(e.target.value)}
           style={{ width: 56 }}
-          title={newWeekly ? 'How many times per week' : 'How many times per day (e.g. 3 for 3 glasses of water)'}
+          title={newCadence === 'day' ? 'How many times per day (e.g. 3 for 3 glasses of water)' : `How many times per ${newCadence}`}
         />
-        <label className="toggle-pill">
-          <input type="checkbox" checked={newWeekly} onChange={(e) => setNewWeekly(e.target.checked)} />
-          Weekly goal
-        </label>
+        <select value={newCadence} onChange={(e) => setNewCadence(e.target.value)}>
+          <option value="day">Daily</option>
+          <option value="week">Weekly</option>
+          <option value="month">Monthly</option>
+        </select>
         <button type="submit" className="btn btn-primary">Add habit</button>
       </form>
-      <p style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: -14, marginBottom: 20 }}>
-        A weekly goal carries over all week and only resets once a new week starts — missing a day won't count against it.
-      </p>
+      {newCadence !== 'day' && (
+        <p style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: -14, marginBottom: 20 }}>
+          A {newCadence}ly goal carries over the whole {newCadence} and only resets once a new {newCadence} starts — missing a day won't count against it.
+        </p>
+      )}
 
       <div className="collapsible">
         <button className="collapsible-header" onClick={() => setWeeklyOpen((o) => !o)}>
@@ -513,7 +531,9 @@ export default function TodayView({
             {weeklyHabits.length === 0 ? (
               <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>No day-specific habits yet.</p>
             ) : (
-              weeklyHabits.map((w) => (
+              [...weeklyHabits]
+                .sort((a, b) => firstDayIndex(a.days) - firstDayIndex(b.days))
+                .map((w) => (
                 <div className="weekly-habit-row" key={w.id}>
                   <div className="weekly-habit-info">
                     <span style={{ fontSize: 13 }}>{w.name}</span>
@@ -548,17 +568,18 @@ export default function TodayView({
                 />
               </div>
               <div className="modal-row">
-                <label className="toggle-pill" style={{ width: 'fit-content' }}>
-                  <input
-                    type="checkbox"
-                    checked={editDraft.cadence === 'week'}
-                    onChange={(e) => setEditDraft({ ...editDraft, cadence: e.target.checked ? 'week' : 'day' })}
-                  />
-                  Weekly goal
-                </label>
+                <label>Repeats</label>
+                <select
+                  value={editDraft.cadence}
+                  onChange={(e) => setEditDraft({ ...editDraft, cadence: e.target.value })}
+                >
+                  <option value="day">Daily</option>
+                  <option value="week">Weekly</option>
+                  <option value="month">Monthly</option>
+                </select>
               </div>
               <div className="modal-row">
-                <label>{editDraft.cadence === 'week' ? 'Times per week' : 'Times per day'}</label>
+                <label>{editDraft.cadence === 'day' ? 'Times per day' : `Times per ${editDraft.cadence}`}</label>
                 <input
                   type="number"
                   min="1"

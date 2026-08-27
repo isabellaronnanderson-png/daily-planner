@@ -2,7 +2,7 @@ import { CATEGORIES } from '../data/categories';
 
 export default function InsightsView({ habits, habitHistory, todos, groups, weeklyHabits }) {
   const stats = {};
-  habits.filter((h) => h.cadence !== 'week').forEach((h) => { stats[h.name] = { completed: 0, total: 0 }; });
+  habits.forEach((h) => { stats[h.name] = { completed: 0, total: 0 }; });
   habitHistory.forEach((entry) => {
     (entry.snapshot || []).forEach((item) => {
       if (!stats[item.name]) stats[item.name] = { completed: 0, total: 0 };
@@ -10,6 +10,10 @@ export default function InsightsView({ habits, habitHistory, todos, groups, week
       if (item.completed) stats[item.name].completed += 1;
     });
   });
+
+  function cadenceFor(name) {
+    return habits.find((h) => h.name === name)?.cadence || 'day';
+  }
 
   // Match each tracked habit name to its current group — checking today's
   // live habit list first, then falling back to the day-specific habit's
@@ -41,10 +45,15 @@ export default function InsightsView({ habits, habitHistory, todos, groups, week
         {list.map((n) => {
           const s = stats[n];
           const pct = s.total > 0 ? Math.round((s.completed / s.total) * 100) : 0;
+          const cadence = cadenceFor(n);
           return (
             <div className="history-row" key={n}>
               <div className="history-label-row">
-                <span>{n}</span>
+                <span>
+                  {n}
+                  {cadence === 'week' && <span className="pill pill-muted" style={{ marginLeft: 6 }}>Weekly</span>}
+                  {cadence === 'month' && <span className="pill pill-muted" style={{ marginLeft: 6 }}>Monthly</span>}
+                </span>
                 <span style={{ color: 'var(--text-secondary)' }}>{pct}%</span>
               </div>
               <div className="history-bar-bg">

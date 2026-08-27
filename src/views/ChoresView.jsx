@@ -19,7 +19,8 @@ function progressFor(chore) {
   let percent = Math.max(0, Math.min(100, (passed / total) * 100));
   const overdue = percent >= 100;
   const daysLeft = Math.ceil((total - passed) / (24 * 60 * 60 * 1000));
-  return { percent, overdue, daysLeft };
+  const daysOverdue = Math.floor((passed - total) / (24 * 60 * 60 * 1000));
+  return { percent, overdue, daysLeft, daysOverdue };
 }
 
 export default function ChoresView({ chores, setChores, resetChore }) {
@@ -88,7 +89,7 @@ export default function ChoresView({ chores, setChores, resetChore }) {
             <div className="chore-group-title">{label}</div>
             <div className="chore-list">
               {items.map((chore) => {
-                const { percent, overdue, daysLeft } = progressFor(chore);
+                const { percent, overdue, daysLeft, daysOverdue } = progressFor(chore);
                 let unit = chore.freqUnit;
                 if (chore.freqVal === 1) unit = unit.slice(0, -1);
                 return (
@@ -115,7 +116,7 @@ export default function ChoresView({ chores, setChores, resetChore }) {
                       className={`chore-status ${overdue ? 'overdue' : 'ok'}`}
                       onClick={() => openEdit(chore)}
                     >
-                      {overdue ? 'Ready' : `${daysLeft}d left`}
+                      {overdue ? (daysOverdue >= 1 ? `${daysOverdue}d overdue` : 'Ready') : `${daysLeft}d left`}
                     </span>
                     <button className="btn" style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => resetChore(chore.id)}>Done</button>
                     <button className="chore-remove" onClick={() => setDeleteTarget(chore)} aria-label="Remove chore">
