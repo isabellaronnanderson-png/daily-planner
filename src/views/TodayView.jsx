@@ -121,11 +121,21 @@ export default function TodayView({
   const [wName, setWName] = useState('');
   const [wDays, setWDays] = useState([]);
   const textareaRef = useRef(null);
+  const pendingCursorRef = useRef(null);
 
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+    }
+    // Restore cursor position after a programmatic edit (bullet conversion,
+    // bullet continuation) — otherwise a controlled textarea resets the
+    // cursor to the very end every time its value is set from state.
+    if (pendingCursorRef.current !== null && textareaRef.current) {
+      const pos = pendingCursorRef.current;
+      textareaRef.current.selectionStart = pos;
+      textareaRef.current.selectionEnd = pos;
+      pendingCursorRef.current = null;
     }
   }, [scratchpad]);
 
@@ -186,10 +196,24 @@ export default function TodayView({
   }
 
   function handleScratchpadKeyDown(e) {
+    const el = e.target;
+    const val = el.value;
+    const start = el.selectionStart;
+
+    // Typing "* " or "- " at the start of a line converts it to a bullet.
+    if (e.key === ' ') {
+      const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+      const currentLine = val.substring(lineStart, start);
+      if (currentLine === '*' || currentLine === '-') {
+        e.preventDefault();
+        const newVal = val.substring(0, lineStart) + '\u2022 ' + val.substring(start);
+        pendingCursorRef.current = lineStart + 2;
+        setScratchpad(newVal);
+        return;
+      }
+    }
+
     if (e.key === 'Enter') {
-      const el = e.target;
-      const val = el.value;
-      const start = el.selectionStart;
       const lineStart = val.lastIndexOf('\n', start - 1) + 1;
       const currentLine = val.substring(lineStart, start);
       const bulletMatch = currentLine.match(/^(\s*)(\u2022|-|\*)\s+(.*)/);
@@ -197,10 +221,15 @@ export default function TodayView({
         e.preventDefault();
         const content = bulletMatch[3].trim();
         if (content === '') {
-          setScratchpad(val.substring(0, lineStart) + val.substring(start));
+          // Empty bullet + Enter exits the list instead of adding another one.
+          const newVal = val.substring(0, lineStart) + val.substring(start);
+          pendingCursorRef.current = lineStart;
+          setScratchpad(newVal);
         } else {
           const addition = '\n' + bulletMatch[1] + '\u2022 ';
-          setScratchpad(val.substring(0, start) + addition + val.substring(start));
+          const newVal = val.substring(0, start) + addition + val.substring(start);
+          pendingCursorRef.current = start + addition.length;
+          setScratchpad(newVal);
         }
       }
     }
