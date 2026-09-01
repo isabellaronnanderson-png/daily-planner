@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, X, GripVertical } from 'lucide-react';
+import { Plus, X, GripVertical, Plane } from 'lucide-react';
 
 const GROUPS = {
   house: 'House',
@@ -23,22 +23,26 @@ function progressFor(chore) {
   return { percent, overdue, daysLeft, daysOverdue };
 }
 
-export default function ChoresView({ chores, setChores, resetChore }) {
+export default function ChoresView({ chores, setChores, resetChore, isHolidayMode }) {
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
 
-  const [form, setForm] = useState({ name: '', group: 'house', freqVal: 3, freqUnit: 'days' });
+  const [form, setForm] = useState({ name: '', group: 'house', freqVal: 3, freqUnit: 'days', skipOnHoliday: false });
   const [editDays, setEditDays] = useState(0);
 
   function submitAdd(e) {
     e.preventDefault();
     if (!form.name.trim() || !form.freqVal) return;
-    setChores([...chores, { id: Date.now(), name: form.name.trim(), group: form.group, freqVal: parseInt(form.freqVal, 10), freqUnit: form.freqUnit, lastDone: Date.now() }]);
-    setForm({ name: '', group: 'house', freqVal: 3, freqUnit: 'days' });
+    setChores([...chores, { id: Date.now(), name: form.name.trim(), group: form.group, freqVal: parseInt(form.freqVal, 10), freqUnit: form.freqUnit, lastDone: Date.now(), skipOnHoliday: form.skipOnHoliday }]);
+    setForm({ name: '', group: 'house', freqVal: 3, freqUnit: 'days', skipOnHoliday: false });
     setAddOpen(false);
+  }
+
+  function toggleSkipHoliday(id) {
+    setChores(chores.map((c) => (c.id === id ? { ...c, skipOnHoliday: !c.skipOnHoliday } : c)));
   }
 
   function openEdit(chore) {
@@ -90,6 +94,7 @@ export default function ChoresView({ chores, setChores, resetChore }) {
             <div className="chore-list">
               {items.map((chore) => {
                 const { percent, overdue, daysLeft, daysOverdue } = progressFor(chore);
+                const paused = isHolidayMode && chore.skipOnHoliday;
                 let unit = chore.freqUnit;
                 if (chore.freqVal === 1) unit = unit.slice(0, -1);
                 return (
@@ -101,6 +106,7 @@ export default function ChoresView({ chores, setChores, resetChore }) {
                     onDragOver={(e) => { e.preventDefault(); setDragOverId(chore.id); }}
                     onDragLeave={() => setDragOverId(null)}
                     onDrop={() => { if (dragId) reorder(key, dragId, chore.id); setDragId(null); setDragOverId(null); }}
+                    style={paused ? { opacity: 0.55 } : undefined}
                   >
                     <span className="chore-drag-handle"><GripVertical size={16} /></span>
                     <div className="chore-main">
@@ -109,15 +115,23 @@ export default function ChoresView({ chores, setChores, resetChore }) {
                         <span className="chore-freq">every {chore.freqVal} {unit}</span>
                       </div>
                       <div className="chore-progress-bg">
-                        <div className={`chore-progress-fill ${overdue ? 'overdue' : ''}`} style={{ width: `${percent}%` }} />
+                        <div className={`chore-progress-fill ${overdue && !paused ? 'overdue' : ''}`} style={{ width: `${percent}%` }} />
                       </div>
                     </div>
                     <span
-                      className={`chore-status ${overdue ? 'overdue' : 'ok'}`}
-                      onClick={() => openEdit(chore)}
+                      className={`chore-status ${overdue && !paused ? 'overdue' : 'ok'}`}
+                      onClick={() => !paused && openEdit(chore)}
                     >
-                      {overdue ? (daysOverdue >= 1 ? `${daysOverdue}d overdue` : 'Ready') : `${daysLeft}d left`}
+                      {paused ? 'Paused' : overdue ? (daysOverdue >= 1 ? `${daysOverdue}d overdue` : 'Ready') : `${daysLeft}d left`}
                     </span>
+                    <button
+                      className="chore-remove"
+                      style={chore.skipOnHoliday ? { color: 'var(--navy)' } : undefined}
+                      onClick={() => toggleSkipHoliday(chore.id)}
+                      title={chore.skipOnHoliday ? 'Pauses while holiday mode is on — click to unpause' : 'Pause this chore during holiday mode'}
+                    >
+                      <Plane size={14} />
+                    </button>
                     <button className="btn" style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => resetChore(chore.id)}>Done</button>
                     <button className="chore-remove" onClick={() => setDeleteTarget(chore)} aria-label="Remove chore">
                       <X size={15} />
@@ -159,6 +173,12 @@ export default function ChoresView({ chores, setChores, resetChore }) {
                     <option value="months">Months</option>
                   </select>
                 </div>
+              </div>
+              <div className="modal-row">
+                <label className="toggle-pill" style={{ width: 'fit-content' }}>
+                  <input type="checkbox" checked={form.skipOnHoliday} onChange={(e) => setForm({ ...form, skipOnHoliday: e.target.checked })} />
+                  <Plane size={12} /> Pause on holiday
+                </label>
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn" onClick={() => setAddOpen(false)}>Cancel</button>

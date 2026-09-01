@@ -72,6 +72,7 @@ export default function App() {
 
   const [todos, setTodos] = useLocalStorage('planner_todos', DEFAULT_TODOS);
   const [isHolidayMode, setIsHolidayMode] = useLocalStorage('planner_holiday_mode', false);
+  const [holidayStartedAt, setHolidayStartedAt] = useLocalStorage('planner_holiday_started_at', null);
   const [scratchpad, setScratchpad] = useLocalStorage('planner_scratchpad', '');
   const [dailyNoteText, setDailyNoteText] = useLocalStorage('planner_daily_note_text', '');
   const [dailyNoteImage, setDailyNoteImage] = useLocalStorage('planner_daily_note_image', null);
@@ -143,12 +144,14 @@ export default function App() {
     let list = [...todosList];
 
     // Make sure overdue chores have a bank entry so they're eligible to be pulled in.
-    chores.filter(isChoreOverdueLocal).forEach((chore) => {
-      const existing = list.find((t) => t.choreId === chore.id && !t.completed);
-      if (!existing) {
-        list.push({ id: 't_chore_' + chore.id + '_' + Date.now(), choreId: chore.id, name: chore.name, category: 'chores', durationMins: 30, dueDate: '', isFocus: false, completed: false, completedAt: null });
-      }
-    });
+    chores
+      .filter((c) => isChoreOverdueLocal(c) && !(isHolidayMode && c.skipOnHoliday))
+      .forEach((chore) => {
+        const existing = list.find((t) => t.choreId === chore.id && !t.completed);
+        if (!existing) {
+          list.push({ id: 't_chore_' + chore.id + '_' + Date.now(), choreId: chore.id, name: chore.name, category: 'chores', durationMins: 30, dueDate: '', isFocus: false, completed: false, completedAt: null });
+        }
+      });
 
     const weekendOrHoliday = isWeekendOrHoliday();
     const isWorkday = !weekendOrHoliday;
@@ -220,6 +223,7 @@ export default function App() {
     // punishing every day it wasn't finished yet.
     const snapshot = habits
       .filter((h) => {
+        if (isHolidayMode && h.skipOnHoliday) return false;
         if (h.cadence === 'week') return isNewWeek;
         if (h.cadence === 'month') return isNewMonth;
         return true;
@@ -265,8 +269,8 @@ export default function App() {
   }
 
   // ---- Habit actions ----
-  function addHabit({ name, targetCount = 1, groupId = null, cadence = 'day' }) {
-    setHabits([...habits, { id: 'h_' + Date.now(), name, completed: false, count: 0, targetCount: Math.max(1, targetCount), groupId: groupId || null, cadence }]);
+  function addHabit({ name, targetCount = 1, groupId = null, cadence = 'day', skipOnHoliday = false }) {
+    setHabits([...habits, { id: 'h_' + Date.now(), name, completed: false, count: 0, targetCount: Math.max(1, targetCount), groupId: groupId || null, cadence, skipOnHoliday }]);
   }
 
   // Click on the Nth mark: if it's already at that count, step back to just
@@ -291,7 +295,7 @@ export default function App() {
     setHabits(
       habits.map((h) =>
         h.id === id
-          ? { ...h, name: trimmedName, targetCount: nextTarget, count: Math.min(h.count || 0, nextTarget), groupId: updates.groupId || null, cadence: updates.cadence || 'day' }
+          ? { ...h, name: trimmedName, targetCount: nextTarget, count: Math.min(h.count || 0, nextTarget), groupId: updates.groupId || null, cadence: updates.cadence || 'day', skipOnHoliday: !!updates.skipOnHoliday }
           : h
       )
     );
@@ -459,6 +463,13 @@ export default function App() {
     setIsHolidayMode(next);
     if (next) {
       setTodos(todos.map((t) => (t.isFocus && t.category === 'work' ? { ...t, isFocus: false } : t)));
+      setHolidayStartedAt(Date.now());
+    } else if (holidayStartedAt) {
+      // Shift paused chores' clocks forward by however long the holiday
+      // lasted, so returning doesn't dump a false backlog of overdue chores.
+      const pausedMs = Date.now() - holidayStartedAt;
+      setChores((prev) => prev.map((c) => (c.skipOnHoliday ? { ...c, lastDone: c.lastDone + pausedMs } : c)));
+      setHolidayStartedAt(null);
     }
   }
 
@@ -531,7 +542,7 @@ export default function App() {
         />
       )}
       {activeTab === 'chores' && (
-        <ChoresView chores={chores} setChores={setChores} resetChore={resetChore} />
+        <ChoresView chores={chores} setChores={setChores} resetChore={resetChore} isHolidayMode={isHolidayMode} />
       )}
       {activeTab === 'insights' && (
         <InsightsView habits={habits} habitHistory={habitHistory} todos={todos} groups={groups} weeklyHabits={weeklyHabits} />

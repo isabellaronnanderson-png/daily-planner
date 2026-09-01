@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Check, Square, X, Sparkles, ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { Check, Square, X, Sparkles, ChevronDown, ChevronRight, Plus, Plane } from 'lucide-react';
 import ActionMenu from '../components/ActionMenu';
 import DailyNote from '../components/DailyNote';
 
@@ -32,6 +32,12 @@ function isChoreOverdue(chore) {
   return Date.now() - chore.lastDone >= totalGoalMs;
 }
 
+function choreDaysOverdue(chore) {
+  const totalGoalMs = chore.freqVal * (chore.freqUnit === 'weeks' ? 7 : chore.freqUnit === 'months' ? 30 : 1) * 24 * 60 * 60 * 1000;
+  const passed = Date.now() - chore.lastDone;
+  return Math.floor((passed - totalGoalMs) / (24 * 60 * 60 * 1000));
+}
+
 function HabitRow({ habit, dragOver, onDragStart, onDragOver, onDragLeave, onDrop, setHabitCount, onEdit, onDelete }) {
   const target = habit.targetCount || 1;
   const count = habit.count || 0;
@@ -50,6 +56,7 @@ function HabitRow({ habit, dragOver, onDragStart, onDragOver, onDragLeave, onDro
         {target > 1 && <span className="count-text"> {count}/{target}</span>}
         {habit.cadence === 'week' && <span className="pill pill-muted" style={{ marginLeft: 8 }}>Weekly</span>}
         {habit.cadence === 'month' && <span className="pill pill-muted" style={{ marginLeft: 8 }}>Monthly</span>}
+        {habit.skipOnHoliday && <Plane size={11} style={{ marginLeft: 8, verticalAlign: -1, color: 'var(--text-muted)' }} aria-label="Paused on holiday" />}
       </span>
       <div className="day-row-actions" draggable={false} onDragStart={(e) => e.stopPropagation()}>
         {target <= 1 ? (
@@ -96,6 +103,7 @@ export default function TodayView({
   const [name, setName] = useState('');
   const [newTarget, setNewTarget] = useState(1);
   const [newCadence, setNewCadence] = useState('day');
+  const [newSkipHoliday, setNewSkipHoliday] = useState(false);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
 
@@ -107,7 +115,7 @@ export default function TodayView({
   const [groupEditName, setGroupEditName] = useState('');
 
   const [editingHabit, setEditingHabit] = useState(null);
-  const [editDraft, setEditDraft] = useState({ name: '', targetCount: 1, groupId: '', cadence: 'day' });
+  const [editDraft, setEditDraft] = useState({ name: '', targetCount: 1, groupId: '', cadence: 'day', skipOnHoliday: false });
 
   const [weeklyOpen, setWeeklyOpen] = useState(false);
   const [wName, setWName] = useState('');
@@ -124,10 +132,11 @@ export default function TodayView({
   function submitHabit(e) {
     e.preventDefault();
     if (!name.trim()) return;
-    addHabit({ name: name.trim(), targetCount: parseInt(newTarget, 10) || 1, cadence: newCadence });
+    addHabit({ name: name.trim(), targetCount: parseInt(newTarget, 10) || 1, cadence: newCadence, skipOnHoliday: newSkipHoliday });
     setName('');
     setNewTarget(1);
     setNewCadence('day');
+    setNewSkipHoliday(false);
   }
 
   function submitGroup(e) {
@@ -148,12 +157,12 @@ export default function TodayView({
   }
 
   function openEdit(habit) {
-    setEditDraft({ name: habit.name, targetCount: habit.targetCount || 1, groupId: habit.groupId || '', cadence: habit.cadence || 'day' });
+    setEditDraft({ name: habit.name, targetCount: habit.targetCount || 1, groupId: habit.groupId || '', cadence: habit.cadence || 'day', skipOnHoliday: !!habit.skipOnHoliday });
     setEditingHabit(habit);
   }
   function submitEdit(e) {
     e.preventDefault();
-    editHabit(editingHabit.id, { name: editDraft.name, targetCount: parseInt(editDraft.targetCount, 10) || 1, groupId: editDraft.groupId || null, cadence: editDraft.cadence });
+    editHabit(editingHabit.id, { name: editDraft.name, targetCount: parseInt(editDraft.targetCount, 10) || 1, groupId: editDraft.groupId || null, cadence: editDraft.cadence, skipOnHoliday: editDraft.skipOnHoliday });
     setEditingHabit(null);
   }
 
@@ -202,11 +211,13 @@ export default function TodayView({
   const nonWorkMins = focusItems.filter((t) => t.category !== 'work').reduce((s, i) => s + (i.durationMins || 30), 0);
   const overCapacity = workMins > 120 || nonWorkMins > 60;
 
-  const overdueChores = chores.filter(isChoreOverdue);
+  const visibleHabits = habits.filter((h) => !(isHolidayMode && h.skipOnHoliday));
+
+  const overdueChores = chores.filter((c) => isChoreOverdue(c) && !(isHolidayMode && c.skipOnHoliday));
   const urgentTodos = todos.filter((t) => !t.completed && t.dueDate).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 3);
   const showBanner = overdueChores.length > 0 || urgentTodos.length > 0;
 
-  const ungroupedHabits = habits.filter((h) => !h.groupId);
+  const ungroupedHabits = visibleHabits.filter((h) => !h.groupId);
 
   function habitDragProps(h) {
     return {
@@ -286,7 +297,7 @@ export default function TodayView({
       )}
 
       {groups.map((group) => {
-        const items = habits.filter((h) => h.groupId === group.id);
+        const items = visibleHabits.filter((h) => h.groupId === group.id);
         return (
           <div
             className={`collapsible ${groupDragOverId === group.id ? 'group-drag-over' : ''}`}
@@ -425,11 +436,14 @@ export default function TodayView({
           <h3>Needs attention</h3>
           {overdueChores.map((chore) => {
             const existing = todos.find((t) => t.choreId === chore.id && !t.completed);
+            const daysOverdue = choreDaysOverdue(chore);
             return (
               <div className="suggestion-pill" key={chore.id}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>{chore.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--red)' }}>Chore is due</div>
+                  <div style={{ fontSize: 11, color: 'var(--red-light)' }}>
+                    {daysOverdue >= 1 ? `${daysOverdue}d overdue` : 'Chore is due'}
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {existing && existing.isFocus ? (
@@ -483,6 +497,10 @@ export default function TodayView({
           <option value="week">Weekly</option>
           <option value="month">Monthly</option>
         </select>
+        <label className="toggle-pill">
+          <input type="checkbox" checked={newSkipHoliday} onChange={(e) => setNewSkipHoliday(e.target.checked)} />
+          <Plane size={12} /> Pause on holiday
+        </label>
         <button type="submit" className="btn btn-primary">Add habit</button>
       </form>
       {newCadence !== 'day' && (
@@ -595,6 +613,16 @@ export default function TodayView({
                     <option key={g.id} value={g.id}>{g.name}</option>
                   ))}
                 </select>
+              </div>
+              <div className="modal-row">
+                <label className="toggle-pill" style={{ width: 'fit-content' }}>
+                  <input
+                    type="checkbox"
+                    checked={editDraft.skipOnHoliday}
+                    onChange={(e) => setEditDraft({ ...editDraft, skipOnHoliday: e.target.checked })}
+                  />
+                  <Plane size={12} /> Pause on holiday
+                </label>
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn" onClick={() => setEditingHabit(null)}>Cancel</button>
