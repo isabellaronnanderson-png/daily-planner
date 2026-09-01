@@ -247,7 +247,7 @@ export default function App() {
       });
     const injected = weeklyHabits
       .filter((w) => w.days.includes(todaysWeekday))
-      .map((w) => ({ id: 'wh_' + w.id, name: w.name, completed: false, count: 0, targetCount: 1, groupId: w.groupId || null, fromWeekly: true }));
+      .map((w) => ({ id: 'wh_' + w.id, name: w.name, completed: false, count: 0, targetCount: 1, groupId: w.groupId || null, fromWeekly: true, skipOnHoliday: !!w.skipOnHoliday }));
     setHabits([...baseHabits, ...injected]);
     setCurrentDate(new Date().toISOString());
     if (isNewWeek) setWeekKey(newWeekKey);

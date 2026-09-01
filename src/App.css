@@ -860,21 +860,11 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
   flex-shrink: 0;
 }
 .chore-main { flex: 1; min-width: 0; }
-.chore-top-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 6px;
-  gap: 8px;
-}
 .chore-name {
+  display: block;
   font-size: 13.5px;
   color: var(--text);
-}
-.chore-freq {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
+  margin-bottom: 6px;
 }
 .chore-progress-bg {
   position: relative;
@@ -897,6 +887,22 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+}
+.chore-done-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.chore-done-btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--text);
 }
 .chore-status.overdue { color: var(--red-light); font-weight: 500; }
 .chore-status.ok { color: var(--text-muted); }

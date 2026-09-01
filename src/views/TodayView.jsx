@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Check, Square, X, Sparkles, ChevronDown, ChevronRight, Plus, Plane } from 'lucide-react';
+import { Check, Square, X, Sparkles, ChevronDown, ChevronRight, Plus, Plane, Pencil } from 'lucide-react';
 import ActionMenu from '../components/ActionMenu';
 import DailyNote from '../components/DailyNote';
 
@@ -120,6 +120,8 @@ export default function TodayView({
   const [weeklyOpen, setWeeklyOpen] = useState(false);
   const [wName, setWName] = useState('');
   const [wDays, setWDays] = useState([]);
+  const [editingWeekly, setEditingWeekly] = useState(null);
+  const [editWeeklyDraft, setEditWeeklyDraft] = useState({ name: '', days: [], skipOnHoliday: false });
   const textareaRef = useRef(null);
   const pendingCursorRef = useRef(null);
 
@@ -187,12 +189,43 @@ export default function TodayView({
   function addWeeklyHabit(e) {
     e.preventDefault();
     if (!wName.trim() || wDays.length === 0) return;
-    setWeeklyHabits([...weeklyHabits, { id: Date.now(), name: wName.trim(), days: wDays }]);
+    setWeeklyHabits([...weeklyHabits, { id: Date.now(), name: wName.trim(), days: wDays, skipOnHoliday: false }]);
     setWName('');
     setWDays([]);
   }
   function deleteWeeklyHabit(id) {
     setWeeklyHabits(weeklyHabits.filter((w) => w.id !== id));
+  }
+  function toggleWeeklySkipHoliday(id) {
+    setWeeklyHabits(weeklyHabits.map((w) => (w.id === id ? { ...w, skipOnHoliday: !w.skipOnHoliday } : w)));
+  }
+
+  function openEditWeekly(w) {
+    setEditWeeklyDraft({ name: w.name, days: [...w.days], skipOnHoliday: !!w.skipOnHoliday });
+    setEditingWeekly(w);
+  }
+  function toggleEditWeeklyDay(day) {
+    if (day === 'weekend') {
+      setEditWeeklyDraft((prev) => ({
+        ...prev,
+        days: hasWeekend(prev.days) ? prev.days.filter((d) => d !== 'sat' && d !== 'sun') : [...prev.days, 'sat', 'sun'],
+      }));
+      return;
+    }
+    setEditWeeklyDraft((prev) => ({
+      ...prev,
+      days: prev.days.includes(day) ? prev.days.filter((d) => d !== day) : [...prev.days, day],
+    }));
+  }
+  function submitEditWeekly(e) {
+    e.preventDefault();
+    if (!editWeeklyDraft.name.trim() || editWeeklyDraft.days.length === 0) return;
+    setWeeklyHabits(
+      weeklyHabits.map((w) =>
+        w.id === editingWeekly.id ? { ...w, name: editWeeklyDraft.name.trim(), days: editWeeklyDraft.days, skipOnHoliday: editWeeklyDraft.skipOnHoliday } : w
+      )
+    );
+    setEditingWeekly(null);
   }
 
   function handleScratchpadKeyDown(e) {
@@ -590,9 +623,22 @@ export default function TodayView({
                       ))}
                     </div>
                   </div>
-                  <button className="chore-remove" onClick={() => deleteWeeklyHabit(w.id)} aria-label="Delete">
-                    <X size={14} />
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                    <button
+                      className="chore-remove"
+                      style={w.skipOnHoliday ? { color: 'var(--navy)' } : undefined}
+                      onClick={() => toggleWeeklySkipHoliday(w.id)}
+                      title={w.skipOnHoliday ? 'Pauses while holiday mode is on — click to unpause' : 'Pause this habit during holiday mode'}
+                    >
+                      <Plane size={14} />
+                    </button>
+                    <button className="chore-remove" onClick={() => openEditWeekly(w)} aria-label="Edit">
+                      <Pencil size={13} />
+                    </button>
+                    <button className="chore-remove" onClick={() => deleteWeeklyHabit(w.id)} aria-label="Delete">
+                      <X size={14} />
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -655,6 +701,62 @@ export default function TodayView({
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn" onClick={() => setEditingHabit(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingWeekly && (
+        <div className="modal-backdrop" onClick={() => setEditingWeekly(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Edit day-specific habit</h2>
+            <form onSubmit={submitEditWeekly}>
+              <div className="modal-row">
+                <label>Name</label>
+                <input
+                  type="text"
+                  value={editWeeklyDraft.name}
+                  onChange={(e) => setEditWeeklyDraft({ ...editWeeklyDraft, name: e.target.value })}
+                  autoFocus
+                />
+              </div>
+              <div className="modal-row">
+                <label>Days</label>
+                <div className="weekday-row">
+                  {WEEKDAYS.map((d) => (
+                    <button
+                      type="button"
+                      key={d.key}
+                      className={`weekday-chip ${editWeeklyDraft.days.includes(d.key) ? 'selected' : ''}`}
+                      onClick={() => toggleEditWeeklyDay(d.key)}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className={`weekday-chip ${hasWeekend(editWeeklyDraft.days) ? 'selected' : ''}`}
+                    onClick={() => toggleEditWeeklyDay('weekend')}
+                    title="Weekend (Saturday & Sunday)"
+                  >
+                    {WEEKEND_CHIP.label}
+                  </button>
+                </div>
+              </div>
+              <div className="modal-row">
+                <label className="toggle-pill" style={{ width: 'fit-content' }}>
+                  <input
+                    type="checkbox"
+                    checked={editWeeklyDraft.skipOnHoliday}
+                    onChange={(e) => setEditWeeklyDraft({ ...editWeeklyDraft, skipOnHoliday: e.target.checked })}
+                  />
+                  <Plane size={12} /> Pause on holiday
+                </label>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn" onClick={() => setEditingWeekly(null)}>Cancel</button>
                 <button type="submit" className="btn btn-primary">Save</button>
               </div>
             </form>

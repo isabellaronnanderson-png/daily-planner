@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, X, GripVertical, Plane } from 'lucide-react';
+import { Plus, X, GripVertical, Plane, Check } from 'lucide-react';
 
 const GROUPS = {
   house: 'House',
@@ -95,8 +95,6 @@ export default function ChoresView({ chores, setChores, resetChore, isHolidayMod
               {items.map((chore) => {
                 const { percent, overdue, daysLeft, daysOverdue } = progressFor(chore);
                 const paused = isHolidayMode && chore.skipOnHoliday;
-                let unit = chore.freqUnit;
-                if (chore.freqVal === 1) unit = unit.slice(0, -1);
                 return (
                   <div
                     key={chore.id}
@@ -110,10 +108,7 @@ export default function ChoresView({ chores, setChores, resetChore, isHolidayMod
                   >
                     <span className="chore-drag-handle"><GripVertical size={16} /></span>
                     <div className="chore-main">
-                      <div className="chore-top-row">
-                        <span className="chore-name">{chore.name}</span>
-                        <span className="chore-freq">every {chore.freqVal} {unit}</span>
-                      </div>
+                      <span className="chore-name">{chore.name}</span>
                       <div className="chore-progress-bg">
                         <div className={`chore-progress-fill ${overdue && !paused ? 'overdue' : ''}`} style={{ width: `${percent}%` }} />
                       </div>
@@ -132,7 +127,9 @@ export default function ChoresView({ chores, setChores, resetChore, isHolidayMod
                     >
                       <Plane size={14} />
                     </button>
-                    <button className="btn" style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => resetChore(chore.id)}>Done</button>
+                    <button className="chore-done-btn" onClick={() => resetChore(chore.id)} aria-label="Mark done" title="Mark done">
+                      <Check size={16} />
+                    </button>
                     <button className="chore-remove" onClick={() => setDeleteTarget(chore)} aria-label="Remove chore">
                       <X size={15} />
                     </button>
