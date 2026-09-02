@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 const LAST_REFRESH_KEY = 'nordicDispatch.lastRefreshAt'
-const LAST_REFRESH_DAY_KEY = 'nordicDispatch.lastRefreshDay'
 const MAX_LOOKBACK_DAYS = 14
-
-function todayString() {
-  return new Date().toDateString()
-}
 
 function formatTimestamp(iso) {
   if (!iso) return null
@@ -52,9 +47,6 @@ function groupByCountry(outlets) {
 
 export default function App() {
   const [lastRefresh, setLastRefresh] = useState(() => localStorage.getItem(LAST_REFRESH_KEY))
-  const [refreshedToday, setRefreshedToday] = useState(
-    () => localStorage.getItem(LAST_REFRESH_DAY_KEY) === todayString()
-  )
   const [abroad, setAbroad] = useState(null)
   const [home, setHome] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -87,9 +79,7 @@ export default function App() {
 
       const now = new Date().toISOString()
       localStorage.setItem(LAST_REFRESH_KEY, now)
-      localStorage.setItem(LAST_REFRESH_DAY_KEY, todayString())
       setLastRefresh(now)
-      setRefreshedToday(true)
       setHasEverLoaded(true)
     } catch (err) {
       setError(err.message || "Something went wrong fetching today's dispatch.")
@@ -106,7 +96,6 @@ export default function App() {
   }, [])
 
   const homeByCountry = useMemo(() => (home ? groupByCountry(home) : null), [home])
-  const canRefresh = !refreshedToday && !loading
 
   return (
     <div className="page">
@@ -128,12 +117,9 @@ export default function App() {
             {lastRefresh ? formatTimestamp(lastRefresh) : 'never \u2014 fetching now'}
           </span>
         </div>
-        <button className="refresh-btn" onClick={runRefresh} disabled={!canRefresh}>
-          {loading ? 'Checking\u2026' : refreshedToday ? 'Checked today' : 'Check for news'}
+        <button className="refresh-btn" onClick={runRefresh} disabled={loading}>
+          {loading ? 'Checking\u2026' : 'Check for news'}
         </button>
-        {refreshedToday && !loading && (
-          <p className="refresh-note">Come back tomorrow for what's new since {formatTimestamp(lastRefresh)}.</p>
-        )}
         {error && <p className="error-note">{error}</p>}
       </div>
 
