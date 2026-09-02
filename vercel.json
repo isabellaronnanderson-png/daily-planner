@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/nordic-rss.js": {
+      "maxDuration": 30
+    },
+    "api/gdelt.js": {
+      "maxDuration": 15
+    }
+  }
+}

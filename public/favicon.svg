@@ -1,4 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="7" fill="#111111"/>
-  <path d="M9 16.5l4.5 4.5L23 11" stroke="#FFFFFF" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" fill="#edefea"/>
+  <rect x="4" y="14" width="56" height="4" fill="#16202b"/>
+  <rect x="4" y="46" width="56" height="4" fill="#16202b"/>
+  <text x="32" y="38" font-family="Georgia, 'Times New Roman', serif" font-size="26" font-weight="700"
+        text-anchor="middle" fill="#16202b">ND</text>
 </svg>
