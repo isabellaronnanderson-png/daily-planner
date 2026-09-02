@@ -2,12 +2,15 @@ import { CATEGORIES } from '../data/categories';
 
 export default function InsightsView({ habits, habitHistory, todos, groups, weeklyHabits }) {
   const stats = {};
-  habits.forEach((h) => { stats[h.name] = { completed: 0, total: 0 }; });
+  habits.forEach((h) => { stats[h.name] = { ticked: 0, possible: 0 }; });
   habitHistory.forEach((entry) => {
     (entry.snapshot || []).forEach((item) => {
-      if (!stats[item.name]) stats[item.name] = { completed: 0, total: 0 };
-      stats[item.name].total += 1;
-      if (item.completed) stats[item.name].completed += 1;
+      if (!stats[item.name]) stats[item.name] = { ticked: 0, possible: 0 };
+      const target = item.target || 1;
+      // Older entries only recorded a boolean — treat those as out of 1.
+      const count = typeof item.count === 'number' ? item.count : item.completed ? target : 0;
+      stats[item.name].possible += target;
+      stats[item.name].ticked += Math.min(count, target);
     });
   });
 
@@ -44,7 +47,7 @@ export default function InsightsView({ habits, habitHistory, todos, groups, week
       <div className="history-grid" style={{ marginTop: 10 }}>
         {list.map((n) => {
           const s = stats[n];
-          const pct = s.total > 0 ? Math.round((s.completed / s.total) * 100) : 0;
+          const pct = s.possible > 0 ? Math.round((s.ticked / s.possible) * 100) : 0;
           const cadence = cadenceFor(n);
           return (
             <div className="history-row" key={n}>

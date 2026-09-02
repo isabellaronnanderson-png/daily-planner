@@ -228,7 +228,7 @@ export default function App() {
         if (h.cadence === 'month') return isNewMonth;
         return true;
       })
-      .map((h) => ({ name: h.name, completed: h.completed }));
+      .map((h) => ({ name: h.name, completed: h.completed, count: h.count || 0, target: h.targetCount || 1 }));
     setHabitHistory([{ date: closingDateKey, snapshot }, ...habitHistory].slice(0, 14));
 
     const todaysWeekday = WEEKDAY_KEYS[new Date().getDay()];
