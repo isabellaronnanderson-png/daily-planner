@@ -1,9 +1,9 @@
 import { CATEGORIES } from '../data/categories';
 
-export default function InsightsView({ habits, habitHistory, todos, groups, weeklyHabits }) {
+export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, todos, groups, weeklyHabits }) {
   const stats = {};
   habits.forEach((h) => { stats[h.name] = { ticked: 0, possible: 0 }; });
-  habitHistory.forEach((entry) => {
+  [...habitHistory, ...(weeklyGoalHistory || []), ...(monthlyGoalHistory || [])].forEach((entry) => {
     (entry.snapshot || []).forEach((item) => {
       if (!stats[item.name]) stats[item.name] = { ticked: 0, possible: 0 };
       const target = item.target || 1;
@@ -86,7 +86,7 @@ export default function InsightsView({ habits, habitHistory, todos, groups, week
 
       <div className="history-box" style={{ marginBottom: '1.5rem' }}>
         <div className="eyebrow" style={{ marginBottom: 0 }}>Habit consistency</div>
-        {habitHistory.length === 0 ? (
+        {habitHistory.length === 0 && (weeklyGoalHistory || []).length === 0 && (monthlyGoalHistory || []).length === 0 ? (
           <p style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 8 }}>
             Click "Begin a new day" on the Today tab to start tracking your consistency over time.
           </p>

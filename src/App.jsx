@@ -64,6 +64,8 @@ export default function App() {
 
   const [habits, setHabits] = useLocalStorage('planner_habits', DEFAULT_HABITS);
   const [habitHistory, setHabitHistory] = useLocalStorage('planner_habit_history', []);
+  const [weeklyGoalHistory, setWeeklyGoalHistory] = useLocalStorage('planner_weekly_goal_history', []);
+  const [monthlyGoalHistory, setMonthlyGoalHistory] = useLocalStorage('planner_monthly_goal_history', []);
   const [weeklyHabits, setWeeklyHabits] = useLocalStorage('planner_weekly_habits', DEFAULT_WEEKLY_HABITS);
   const [groups, setGroups] = useLocalStorage('planner_habit_groups', []);
   const [todoSectionCollapsed, setTodoSectionCollapsed] = useLocalStorage('planner_todo_section_collapsed', false);
@@ -110,15 +112,20 @@ export default function App() {
   // history too (including any stragglers left over from before this existed).
   useEffect(() => {
     const validNames = new Set([...habits.map((h) => h.name), ...weeklyHabits.map((w) => w.name)]);
-    setHabitHistory((prev) => {
-      let changed = false;
-      const next = prev.map((entry) => {
-        const filtered = (entry.snapshot || []).filter((item) => validNames.has(item.name));
-        if (filtered.length !== (entry.snapshot || []).length) changed = true;
-        return { ...entry, snapshot: filtered };
+    function pruneWith(setter) {
+      setter((prev) => {
+        let changed = false;
+        const next = prev.map((entry) => {
+          const filtered = (entry.snapshot || []).filter((item) => validNames.has(item.name));
+          if (filtered.length !== (entry.snapshot || []).length) changed = true;
+          return { ...entry, snapshot: filtered };
+        });
+        return changed ? next : prev;
       });
-      return changed ? next : prev;
-    });
+    }
+    pruneWith(setHabitHistory);
+    pruneWith(setWeeklyGoalHistory);
+    pruneWith(setMonthlyGoalHistory);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [habits, weeklyHabits]);
 
@@ -220,16 +227,27 @@ export default function App() {
     // Daily habits are logged every day. Weekly/monthly goals only get a
     // history entry on the day their cycle actually closes, so consistency
     // reflects "how often the whole week/month got done" rather than
-    // punishing every day it wasn't finished yet.
-    const snapshot = habits
-      .filter((h) => {
-        if (isHolidayMode && h.skipOnHoliday) return false;
-        if (h.cadence === 'week') return isNewWeek;
-        if (h.cadence === 'month') return isNewMonth;
-        return true;
-      })
-      .map((h) => ({ name: h.name, completed: h.completed, count: h.count || 0, target: h.targetCount || 1 }));
-    setHabitHistory([{ date: closingDateKey, snapshot }, ...habitHistory].slice(0, 14));
+    // punishing every day it wasn't finished yet. Each cadence gets its own
+    // history stream so weekly/monthly goals can retain a meaningful number
+    // of cycles (12 weeks, 12 months) without bloating daily history.
+    const toSnapshotItem = (h) => ({ name: h.name, completed: h.completed, count: h.count || 0, target: h.targetCount || 1 });
+    const notPaused = (h) => !(isHolidayMode && h.skipOnHoliday);
+
+    const dailySnapshot = habits.filter((h) => notPaused(h) && h.cadence !== 'week' && h.cadence !== 'month').map(toSnapshotItem);
+    setHabitHistory([{ date: closingDateKey, snapshot: dailySnapshot }, ...habitHistory].slice(0, 14));
+
+    if (isNewWeek) {
+      const weeklySnapshot = habits.filter((h) => notPaused(h) && h.cadence === 'week').map(toSnapshotItem);
+      if (weeklySnapshot.length > 0) {
+        setWeeklyGoalHistory([{ date: closingDateKey, snapshot: weeklySnapshot }, ...weeklyGoalHistory].slice(0, 12));
+      }
+    }
+    if (isNewMonth) {
+      const monthlySnapshot = habits.filter((h) => notPaused(h) && h.cadence === 'month').map(toSnapshotItem);
+      if (monthlySnapshot.length > 0) {
+        setMonthlyGoalHistory([{ date: closingDateKey, snapshot: monthlySnapshot }, ...monthlyGoalHistory].slice(0, 12));
+      }
+    }
 
     const todaysWeekday = WEEKDAY_KEYS[new Date().getDay()];
     const baseHabits = habits
@@ -300,12 +318,14 @@ export default function App() {
       )
     );
     if (trimmedName !== habit.name) {
-      setHabitHistory(
-        habitHistory.map((entry) => ({
+      const renameIn = (history) =>
+        history.map((entry) => ({
           ...entry,
           snapshot: (entry.snapshot || []).map((item) => (item.name === habit.name ? { ...item, name: trimmedName } : item)),
-        }))
-      );
+        }));
+      setHabitHistory(renameIn(habitHistory));
+      setWeeklyGoalHistory(renameIn(weeklyGoalHistory));
+      setMonthlyGoalHistory(renameIn(monthlyGoalHistory));
     }
     if (habit.fromWeekly) {
       const weeklyId = id.replace(/^wh_/, '');
@@ -317,12 +337,14 @@ export default function App() {
     const habit = habits.find((h) => h.id === id);
     setHabits(habits.filter((h) => h.id !== id));
     if (habit) {
-      setHabitHistory(
-        habitHistory.map((entry) => ({
+      const purgeFrom = (history) =>
+        history.map((entry) => ({
           ...entry,
           snapshot: (entry.snapshot || []).filter((item) => item.name !== habit.name),
-        }))
-      );
+        }));
+      setHabitHistory(purgeFrom(habitHistory));
+      setWeeklyGoalHistory(purgeFrom(weeklyGoalHistory));
+      setMonthlyGoalHistory(purgeFrom(monthlyGoalHistory));
     }
   }
 
@@ -545,7 +567,15 @@ export default function App() {
         <ChoresView chores={chores} setChores={setChores} resetChore={resetChore} isHolidayMode={isHolidayMode} />
       )}
       {activeTab === 'insights' && (
-        <InsightsView habits={habits} habitHistory={habitHistory} todos={todos} groups={groups} weeklyHabits={weeklyHabits} />
+        <InsightsView
+          habits={habits}
+          habitHistory={habitHistory}
+          weeklyGoalHistory={weeklyGoalHistory}
+          monthlyGoalHistory={monthlyGoalHistory}
+          todos={todos}
+          groups={groups}
+          weeklyHabits={weeklyHabits}
+        />
       )}
     </div>
   );
