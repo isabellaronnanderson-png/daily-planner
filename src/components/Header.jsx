@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react';
 import { ImagePlus, RefreshCw, X, Move, Pencil } from 'lucide-react';
+import AccountBadge from './AccountBadge';
+import BackupMenu from './BackupMenu';
 
 export const TAB_META = {
   habits: 'Today',
@@ -16,6 +18,7 @@ export default function Header({
   tabOrder, setTabOrder,
   currentDate,
   title, setTitle,
+  user, signOut, syncStatus, downloadBackup, restoreFromFile,
 }) {
   const fileRef = useRef(null);
   const coverRef = useRef(null);
@@ -113,6 +116,12 @@ export default function Header({
   return (
     <>
       <div className="cover" ref={coverRef}>
+        <div className="header-utility-row">
+          {syncStatus === 'syncing' && <span className="sync-status">Syncing…</span>}
+          {syncStatus === 'error' && <span className="sync-status">Sync error</span>}
+          <BackupMenu downloadBackup={downloadBackup} restoreFromFile={restoreFromFile} />
+          <AccountBadge user={user} signOut={signOut} />
+        </div>
         {coverImage ? (
           <>
             <img

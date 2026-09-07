@@ -1028,6 +1028,140 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
   cursor: pointer;
 }
 
+/* ===== Auth screens ===== */
+.auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: var(--bg);
+}
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+}
+.auth-title {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 28px;
+  color: var(--text);
+  margin: 0 0 6px;
+  text-align: center;
+}
+.auth-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+.auth-error {
+  font-size: 12.5px;
+  color: var(--red-light);
+  margin: 4px 0 12px;
+}
+.auth-switch {
+  display: block;
+  width: 100%;
+  text-align: center;
+  margin-top: 16px;
+  font-size: 12.5px;
+}
+.auth-icon-circle {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--navy-bg);
+  color: var(--navy);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+.auth-loading-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ===== Account badge + backup menu (header) ===== */
+.header-utility-row {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 5;
+}
+.account-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--text);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.header-icon-btn {
+  background: rgba(0,0,0,0.45);
+  border: none;
+  border-radius: var(--radius);
+  padding: 5px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+}
+.header-icon-btn:hover {
+  background: rgba(0,0,0,0.65);
+}
+.backup-menu-wrap {
+  position: relative;
+}
+.backup-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  z-index: 60;
+  min-width: 170px;
+  overflow: hidden;
+}
+.backup-dropdown button {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.backup-dropdown button:hover {
+  background: var(--surface-hover);
+}
+.sync-status {
+  font-size: 10.5px;
+  color: rgba(255,255,255,0.85);
+  background: rgba(0,0,0,0.45);
+  padding: 4px 8px;
+  border-radius: var(--radius);
+}
+
 /* ===== Modal ===== */
 .modal-backdrop {
   position: fixed;
