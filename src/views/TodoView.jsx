@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Check, Square, X, Sparkles, Plane, Sun, CalendarDays } from 'lucide-react';
+import { Square, X, Sparkles, Plane, Sun, CalendarDays } from 'lucide-react';
 import CalendarPopover from '../components/CalendarPopover';
 
 function IconToggle({ active, onClick, icon: Icon, label, activeColor = 'var(--navy)' }) {
@@ -70,7 +70,6 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
           onKeyDown={handleKeyDown}
         />
         {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
-        {todo.weekendOnly && <span className="pill pill-muted">Weekend only</span>}
       </div>
       <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
         <IconToggle active={todo.skipOnHoliday} onClick={() => toggleSkipHoliday(todo.id)} icon={Plane} label={todo.skipOnHoliday ? 'Pauses on holiday — click to unpause' : 'Pause this task during holiday mode'} />
@@ -185,9 +184,6 @@ export default function TodoView({
   const workItems = todos.filter((t) => !t.isFocus && !t.completed && t.isWork);
   const personalItems = todos.filter((t) => !t.isFocus && !t.completed && !t.isWork);
 
-  const fourteenDays = 14 * 24 * 60 * 60 * 1000;
-  const vaultItems = todos.filter((t) => t.completed && t.completedAt && Date.now() - t.completedAt <= fourteenDays);
-
   return (
     <div className="view">
       <div className="section-row">
@@ -195,7 +191,7 @@ export default function TodoView({
       </div>
 
       <TodoSection
-        title="To-do"
+        title="Personal"
         items={personalItems}
         toggleTodo={toggleTodo}
         updateName={updateName}
@@ -221,23 +217,6 @@ export default function TodoView({
         insertAfter={(afterId) => insertAfter(afterId, true)}
         appendBlank={() => appendBlank(true)}
       />
-
-      <div className="vault-box">
-        <h3 className="section-title" style={{ marginBottom: 10 }}>Recently completed</h3>
-        <div className="vault-list">
-          {vaultItems.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Nothing completed in the last two weeks yet.</div>}
-          {vaultItems.map((todo) => (
-            <div className="card completed" key={todo.id}>
-              <div className="card-left">
-                <Check size={15} style={{ flexShrink: 0 }} />
-                <span className="card-label">{todo.name}</span>
-                {todo.isWork && <span className="pill pill-muted">Work</span>}
-              </div>
-              <button className="btn-ghost" onClick={() => toggleTodo(todo.id)}>Reopen</button>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

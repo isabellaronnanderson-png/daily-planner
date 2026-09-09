@@ -918,10 +918,12 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
 .todo-checklist-row {
   gap: 8px;
 }
-.todo-inline-input {
-  border: none;
-  background: none;
-  padding: 0;
+.todo-inline-input,
+input.todo-inline-input {
+  border: none !important;
+  border-radius: 0 !important;
+  background: none !important;
+  padding: 0 !important;
   font-size: 13.5px;
   color: var(--text);
   flex: 1;
