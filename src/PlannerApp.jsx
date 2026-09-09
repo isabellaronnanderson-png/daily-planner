@@ -251,7 +251,7 @@ export default function PlannerApp({ user, signOut }) {
     const isWeekday = !weekendOrHoliday;
 
     const bankItems = list.filter(
-      (t) => !t.isFocus && !t.completed && !(isHolidayMode && t.skipOnHoliday) && !(t.weekendOnly && !weekendOrHoliday)
+      (t) => t.name.trim() && !t.isFocus && !t.completed && !(isHolidayMode && t.skipOnHoliday) && !(t.weekendOnly && !weekendOrHoliday)
     );
 
     const withDeadline = bankItems.filter((t) => t.dueDate).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
@@ -499,7 +499,7 @@ export default function PlannerApp({ user, signOut }) {
 
   // No hard cap — focus is now just "what I've chosen to work on today."
   function makeFocus(id) {
-    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, isFocus: true } : t)));
+    setTodos((prev) => prev.map((t) => (t.id === id && t.name.trim() ? { ...t, isFocus: true } : t)));
   }
 
   // Atomically find-or-create a todo for a chore, then focus it — avoids the

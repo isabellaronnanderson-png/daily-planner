@@ -1,71 +1,139 @@
-import { useRef, useState } from 'react';
-import { Check, Square, Sparkles, Plane, Sun, Briefcase } from 'lucide-react';
-import ActionMenu from '../components/ActionMenu';
+import { useState, useRef, useEffect } from 'react';
+import { Check, Square, X, Sparkles, Plane, Sun, CalendarDays } from 'lucide-react';
+import CalendarPopover from '../components/CalendarPopover';
 
-function TodoSection({ title, items, addTodo, toggleTodo, toggleTodoSkipHoliday, toggleTodoWeekendOnly, toggleTodoIsWork, onEdit, deleteTodo, makeFocus, moveLabel }) {
-  const nameRef = useRef(null);
-  const dateRef = useRef(null);
+function IconToggle({ active, onClick, icon: Icon, label, activeColor = 'var(--navy)' }) {
+  return (
+    <span className="icon-tooltip-wrap">
+      <button className="chore-remove" style={active ? { color: activeColor } : undefined} onClick={onClick}>
+        <Icon size={14} />
+      </button>
+      <span className="icon-tooltip-bubble">{label}</span>
+    </span>
+  );
+}
 
-  function submit(e) {
-    e.preventDefault();
-    const name = nameRef.current.value.trim();
-    if (!name) return;
-    addTodo(name, dateRef.current.value);
-    nameRef.current.value = '';
-    dateRef.current.value = '';
+function DeadlineButton({ dueDate, onSelect, onClear }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  return (
+    <span className="icon-tooltip-wrap" ref={wrapRef} style={{ position: 'relative' }}>
+      <button
+        className="chore-remove"
+        style={dueDate ? { color: 'var(--red-light)' } : undefined}
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+      >
+        <CalendarDays size={14} />
+      </button>
+      <span className="icon-tooltip-bubble">{dueDate ? `Due ${dueDate} — click to change` : 'Add a deadline'}</span>
+      {open && <CalendarPopover value={dueDate} onSelect={onSelect} onClear={onClear} onClose={() => setOpen(false)} />}
+    </span>
+  );
+}
+
+function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, deleteTodo, makeFocus, insertAfter, focusPrevious, inputRefs }) {
+  function handleKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!todo.name.trim()) return;
+      insertAfter(todo.id);
+    } else if (e.key === 'Backspace' && todo.name === '' && items.length > 1) {
+      e.preventDefault();
+      const prevItem = items[index - 1];
+      deleteTodo(todo.id);
+      if (prevItem) focusPrevious(prevItem.id);
+    }
+  }
+
+  return (
+    <div className="card todo-checklist-row">
+      <div className="card-left" style={{ flex: 1 }}>
+        <button className="check-btn unchecked" onClick={() => toggleTodo(todo.id)} aria-label="Mark complete">
+          <Square size={16} />
+        </button>
+        <input
+          ref={(el) => { if (el) inputRefs.current[todo.id] = el; else delete inputRefs.current[todo.id]; }}
+          type="text"
+          className="todo-inline-input"
+          placeholder="Add a task…"
+          value={todo.name}
+          onChange={(e) => updateName(todo.id, e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+        {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
+        {todo.weekendOnly && <span className="pill pill-muted">Weekend only</span>}
+      </div>
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+        <IconToggle active={todo.skipOnHoliday} onClick={() => toggleSkipHoliday(todo.id)} icon={Plane} label={todo.skipOnHoliday ? 'Pauses on holiday — click to unpause' : 'Pause this task during holiday mode'} />
+        <IconToggle active={todo.weekendOnly} onClick={() => toggleWeekendOnly(todo.id)} icon={Sun} label={todo.weekendOnly ? 'Only pulled in on weekends — click to allow any day' : 'Only relevant on weekends'} />
+        <DeadlineButton dueDate={todo.dueDate} onSelect={(d) => setDueDate(todo.id, d)} onClear={() => setDueDate(todo.id, '')} />
+        <button className="btn btn-sm" onClick={() => makeFocus(todo.id)}><Sparkles size={12} /> Focus</button>
+        <button className="chore-remove" onClick={() => deleteTodo(todo.id)} aria-label="Delete">
+          <X size={15} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, deleteTodo, makeFocus, insertAfter, appendBlank }) {
+  const inputRefs = useRef({});
+  const pendingFocusId = useRef(null);
+
+  // Always keep exactly one blank row at the end, ready to type into —
+  // like a notes app rather than a form you have to submit.
+  useEffect(() => {
+    const hasBlank = items.some((t) => t.name.trim() === '');
+    if (!hasBlank) appendBlank();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length]);
+
+  useEffect(() => {
+    if (pendingFocusId.current && inputRefs.current[pendingFocusId.current]) {
+      inputRefs.current[pendingFocusId.current].focus();
+      pendingFocusId.current = null;
+    }
+  }, [items]);
+
+  function handleInsertAfter(afterId) {
+    const newId = insertAfter(afterId);
+    pendingFocusId.current = newId;
+  }
+
+  function handleFocusPrevious(id) {
+    pendingFocusId.current = id;
   }
 
   return (
     <div className="bank-box">
       <h3 className="section-title" style={{ marginBottom: 10 }}>{title}</h3>
-
-      <form className="form-row" onSubmit={submit}>
-        <input type="text" placeholder={`Add to ${title.toLowerCase()}`} ref={nameRef} required />
-        <input type="date" ref={dateRef} />
-        <button type="submit" className="btn btn-primary">Add</button>
-      </form>
-
       <div className="bank-list">
-        {items.length === 0 && <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>Nothing here right now.</div>}
-        {items.map((todo) => (
-          <div key={todo.id} className="card">
-            <div className="card-left">
-              <button className="check-btn unchecked" onClick={() => toggleTodo(todo.id)} aria-label="Mark complete">
-                <Square size={16} />
-              </button>
-              <span className="card-label">{todo.name}</span>
-              {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
-              {todo.weekendOnly && <span className="pill pill-muted">Weekend only</span>}
-            </div>
-            <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
-              <button
-                className="chore-remove"
-                style={todo.skipOnHoliday ? { color: 'var(--navy)' } : undefined}
-                onClick={() => toggleTodoSkipHoliday(todo.id)}
-                title={todo.skipOnHoliday ? 'Pauses while holiday mode is on — click to unpause' : 'Pause this task during holiday mode'}
-              >
-                <Plane size={14} />
-              </button>
-              <button
-                className="chore-remove"
-                style={todo.weekendOnly ? { color: 'var(--navy)' } : undefined}
-                onClick={() => toggleTodoWeekendOnly(todo.id)}
-                title={todo.weekendOnly ? 'Only pulled into Today on weekends — click to allow any day' : 'Only relevant on weekends'}
-              >
-                <Sun size={14} />
-              </button>
-              <button
-                className="chore-remove"
-                style={todo.isWork ? { color: 'var(--navy)' } : undefined}
-                onClick={() => toggleTodoIsWork(todo.id)}
-                title={moveLabel}
-              >
-                <Briefcase size={14} />
-              </button>
-              <button className="btn btn-sm" onClick={() => makeFocus(todo.id)}><Sparkles size={12} /> Focus</button>
-              <ActionMenu onEdit={() => onEdit(todo)} onDelete={() => deleteTodo(todo.id)} />
-            </div>
-          </div>
+        {items.map((todo, i) => (
+          <TodoRow
+            key={todo.id}
+            todo={todo}
+            index={i}
+            items={items}
+            toggleTodo={toggleTodo}
+            updateName={updateName}
+            setDueDate={setDueDate}
+            toggleSkipHoliday={toggleSkipHoliday}
+            toggleWeekendOnly={toggleWeekendOnly}
+            deleteTodo={deleteTodo}
+            makeFocus={makeFocus}
+            insertAfter={handleInsertAfter}
+            focusPrevious={handleFocusPrevious}
+            inputRefs={inputRefs}
+          />
         ))}
       </div>
     </div>
@@ -73,46 +141,52 @@ function TodoSection({ title, items, addTodo, toggleTodo, toggleTodoSkipHoliday,
 }
 
 export default function TodoView({
-  todos, setTodos, toggleTodo, editTodo, deleteTodo, makeFocus,
+  todos, setTodos, toggleTodo, deleteTodo, makeFocus,
   toggleTodoSkipHoliday, toggleTodoWeekendOnly, toggleTodoIsWork,
 }) {
-  const [editingTodo, setEditingTodo] = useState(null);
-  const [editName, setEditName] = useState('');
-
-  function addTodo(name, dueDate, isWork) {
-    setTodos([
-      ...todos,
-      {
-        id: 't_' + Date.now() + Math.random().toString(36).slice(2, 6),
-        name,
-        dueDate,
-        isFocus: false,
-        completed: false,
-        completedAt: null,
-        skipOnHoliday: false,
-        weekendOnly: false,
-        isWork,
-      },
-    ]);
+  function blankTodo(isWork) {
+    return {
+      id: 't_' + Date.now() + Math.random().toString(36).slice(2, 6),
+      name: '',
+      dueDate: '',
+      isFocus: false,
+      completed: false,
+      completedAt: null,
+      skipOnHoliday: false,
+      weekendOnly: false,
+      isWork,
+    };
   }
 
-  const sortByDate = (a, b) => {
-    if (a.dueDate && !b.dueDate) return -1;
-    if (!a.dueDate && b.dueDate) return 1;
-    if (a.dueDate && b.dueDate) return new Date(a.dueDate) - new Date(b.dueDate);
-    return 0;
-  };
+  function appendBlank(isWork) {
+    setTodos((prev) => [...prev, blankTodo(isWork)]);
+  }
 
-  const workItems = todos.filter((t) => !t.isFocus && !t.completed && t.isWork).sort(sortByDate);
-  const personalItems = todos.filter((t) => !t.isFocus && !t.completed && !t.isWork).sort(sortByDate);
+  function insertAfter(afterId, isWork) {
+    const newTodo = blankTodo(isWork);
+    setTodos((prev) => {
+      const idx = prev.findIndex((t) => t.id === afterId);
+      if (idx === -1) return [...prev, newTodo];
+      const next = [...prev];
+      next.splice(idx + 1, 0, newTodo);
+      return next;
+    });
+    return newTodo.id;
+  }
+
+  function updateName(id, name) {
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, name } : t)));
+  }
+
+  function setDueDate(id, dueDate) {
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, dueDate } : t)));
+  }
+
+  const workItems = todos.filter((t) => !t.isFocus && !t.completed && t.isWork);
+  const personalItems = todos.filter((t) => !t.isFocus && !t.completed && !t.isWork);
 
   const fourteenDays = 14 * 24 * 60 * 60 * 1000;
   const vaultItems = todos.filter((t) => t.completed && t.completedAt && Date.now() - t.completedAt <= fourteenDays);
-
-  function openEdit(todo) {
-    setEditingTodo(todo);
-    setEditName(todo.name);
-  }
 
   return (
     <div className="view">
@@ -121,31 +195,31 @@ export default function TodoView({
       </div>
 
       <TodoSection
-        title="Work"
-        items={workItems}
-        addTodo={(name, dueDate) => addTodo(name, dueDate, true)}
+        title="To-do"
+        items={personalItems}
         toggleTodo={toggleTodo}
-        toggleTodoSkipHoliday={toggleTodoSkipHoliday}
-        toggleTodoWeekendOnly={toggleTodoWeekendOnly}
-        toggleTodoIsWork={toggleTodoIsWork}
-        onEdit={openEdit}
+        updateName={updateName}
+        setDueDate={setDueDate}
+        toggleSkipHoliday={toggleTodoSkipHoliday}
+        toggleWeekendOnly={toggleTodoWeekendOnly}
         deleteTodo={deleteTodo}
         makeFocus={makeFocus}
-        moveLabel="Move to your personal to-do list"
+        insertAfter={(afterId) => insertAfter(afterId, false)}
+        appendBlank={() => appendBlank(false)}
       />
 
       <TodoSection
-        title="To-do"
-        items={personalItems}
-        addTodo={(name, dueDate) => addTodo(name, dueDate, false)}
+        title="Work"
+        items={workItems}
         toggleTodo={toggleTodo}
-        toggleTodoSkipHoliday={toggleTodoSkipHoliday}
-        toggleTodoWeekendOnly={toggleTodoWeekendOnly}
-        toggleTodoIsWork={toggleTodoIsWork}
-        onEdit={openEdit}
+        updateName={updateName}
+        setDueDate={setDueDate}
+        toggleSkipHoliday={toggleTodoSkipHoliday}
+        toggleWeekendOnly={toggleTodoWeekendOnly}
         deleteTodo={deleteTodo}
         makeFocus={makeFocus}
-        moveLabel="Move to your work list"
+        insertAfter={(afterId) => insertAfter(afterId, true)}
+        appendBlank={() => appendBlank(true)}
       />
 
       <div className="vault-box">
@@ -164,30 +238,6 @@ export default function TodoView({
           ))}
         </div>
       </div>
-
-      {editingTodo && (
-        <div className="modal-backdrop" onClick={() => setEditingTodo(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Edit task</h2>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                editTodo(editingTodo.id, editName);
-                setEditingTodo(null);
-              }}
-            >
-              <div className="modal-row">
-                <label>Name</label>
-                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} autoFocus />
-              </div>
-              <div className="modal-actions">
-                <button type="button" className="btn" onClick={() => setEditingTodo(null)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Save</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
