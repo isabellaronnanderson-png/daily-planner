@@ -1,55 +1,118 @@
 import { useRef, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Check, Square, Sparkles, Plane, Sun, Briefcase } from 'lucide-react';
 import ActionMenu from '../components/ActionMenu';
-import CategoryTag from '../components/CategoryTag';
-import { CATEGORIES, CATEGORY_ORDER } from '../data/categories';
 
-export default function TodoView({ todos, setTodos, toggleTodo, editTodo, deleteTodo, makeFocus, isHolidayMode }) {
+function TodoSection({ title, items, addTodo, toggleTodo, toggleTodoSkipHoliday, toggleTodoWeekendOnly, toggleTodoIsWork, onEdit, deleteTodo, makeFocus, moveLabel }) {
   const nameRef = useRef(null);
-  const catRef = useRef(null);
-  const durRef = useRef(null);
   const dateRef = useRef(null);
-  const [editingTodo, setEditingTodo] = useState(null);
-  const [editName, setEditName] = useState('');
 
-  function isWeekendOrHoliday() {
-    const day = new Date().getDay();
-    return day === 0 || day === 6 || isHolidayMode;
-  }
-
-  function addTodo(e) {
+  function submit(e) {
     e.preventDefault();
     const name = nameRef.current.value.trim();
     if (!name) return;
-    setTodos([
-      ...todos,
-      {
-        id: 't_' + Date.now(),
-        name,
-        category: catRef.current.value,
-        durationMins: parseInt(durRef.current.value, 10) || 30,
-        dueDate: dateRef.current.value,
-        isFocus: false,
-        completed: false,
-        completedAt: null,
-      },
-    ]);
+    addTodo(name, dateRef.current.value);
     nameRef.current.value = '';
     dateRef.current.value = '';
   }
 
-  const weekendOrHoliday = isWeekendOrHoliday();
-  let bankItems = todos.filter((t) => !t.isFocus && !t.completed);
-  if (weekendOrHoliday) bankItems = bankItems.filter((t) => t.category !== 'work');
-  bankItems = [...bankItems].sort((a, b) => {
-    if (CATEGORY_ORDER[a.category] !== CATEGORY_ORDER[b.category]) return CATEGORY_ORDER[a.category] - CATEGORY_ORDER[b.category];
+  return (
+    <div className="bank-box">
+      <h3 className="section-title" style={{ marginBottom: 10 }}>{title}</h3>
+
+      <form className="form-row" onSubmit={submit}>
+        <input type="text" placeholder={`Add to ${title.toLowerCase()}`} ref={nameRef} required />
+        <input type="date" ref={dateRef} />
+        <button type="submit" className="btn btn-primary">Add</button>
+      </form>
+
+      <div className="bank-list">
+        {items.length === 0 && <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>Nothing here right now.</div>}
+        {items.map((todo) => (
+          <div key={todo.id} className="card">
+            <div className="card-left">
+              <button className="check-btn unchecked" onClick={() => toggleTodo(todo.id)} aria-label="Mark complete">
+                <Square size={16} />
+              </button>
+              <span className="card-label">{todo.name}</span>
+              {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
+              {todo.weekendOnly && <span className="pill pill-muted">Weekend only</span>}
+            </div>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+              <button
+                className="chore-remove"
+                style={todo.skipOnHoliday ? { color: 'var(--navy)' } : undefined}
+                onClick={() => toggleTodoSkipHoliday(todo.id)}
+                title={todo.skipOnHoliday ? 'Pauses while holiday mode is on — click to unpause' : 'Pause this task during holiday mode'}
+              >
+                <Plane size={14} />
+              </button>
+              <button
+                className="chore-remove"
+                style={todo.weekendOnly ? { color: 'var(--navy)' } : undefined}
+                onClick={() => toggleTodoWeekendOnly(todo.id)}
+                title={todo.weekendOnly ? 'Only pulled into Today on weekends — click to allow any day' : 'Only relevant on weekends'}
+              >
+                <Sun size={14} />
+              </button>
+              <button
+                className="chore-remove"
+                style={todo.isWork ? { color: 'var(--navy)' } : undefined}
+                onClick={() => toggleTodoIsWork(todo.id)}
+                title={moveLabel}
+              >
+                <Briefcase size={14} />
+              </button>
+              <button className="btn btn-sm" onClick={() => makeFocus(todo.id)}><Sparkles size={12} /> Focus</button>
+              <ActionMenu onEdit={() => onEdit(todo)} onDelete={() => deleteTodo(todo.id)} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function TodoView({
+  todos, setTodos, toggleTodo, editTodo, deleteTodo, makeFocus,
+  toggleTodoSkipHoliday, toggleTodoWeekendOnly, toggleTodoIsWork,
+}) {
+  const [editingTodo, setEditingTodo] = useState(null);
+  const [editName, setEditName] = useState('');
+
+  function addTodo(name, dueDate, isWork) {
+    setTodos([
+      ...todos,
+      {
+        id: 't_' + Date.now() + Math.random().toString(36).slice(2, 6),
+        name,
+        dueDate,
+        isFocus: false,
+        completed: false,
+        completedAt: null,
+        skipOnHoliday: false,
+        weekendOnly: false,
+        isWork,
+      },
+    ]);
+  }
+
+  const sortByDate = (a, b) => {
     if (a.dueDate && !b.dueDate) return -1;
     if (!a.dueDate && b.dueDate) return 1;
+    if (a.dueDate && b.dueDate) return new Date(a.dueDate) - new Date(b.dueDate);
     return 0;
-  });
+  };
+
+  const workItems = todos.filter((t) => !t.isFocus && !t.completed && t.isWork).sort(sortByDate);
+  const personalItems = todos.filter((t) => !t.isFocus && !t.completed && !t.isWork).sort(sortByDate);
 
   const fourteenDays = 14 * 24 * 60 * 60 * 1000;
   const vaultItems = todos.filter((t) => t.completed && t.completedAt && Date.now() - t.completedAt <= fourteenDays);
+
+  function openEdit(todo) {
+    setEditingTodo(todo);
+    setEditName(todo.name);
+  }
 
   return (
     <div className="view">
@@ -57,49 +120,33 @@ export default function TodoView({ todos, setTodos, toggleTodo, editTodo, delete
         <h2 className="section-title">To-do</h2>
       </div>
 
-      <form className="form-row" onSubmit={addTodo} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 8 }}>
-        <input type="text" placeholder="Add a task" ref={nameRef} required style={{ minWidth: 0 }} />
-        <select ref={catRef} defaultValue="work">
-          {Object.entries(CATEGORIES).map(([key, meta]) => (
-            <option key={key} value={key}>{meta.label}</option>
-          ))}
-        </select>
-        <select ref={durRef} defaultValue="30">
-          <option value="15">15 min</option>
-          <option value="30">30 min</option>
-          <option value="45">45 min</option>
-          <option value="60">1 hour</option>
-          <option value="90">1.5 hours</option>
-          <option value="120">2 hours</option>
-        </select>
-        <input type="date" ref={dateRef} />
-        <button type="submit" className="btn btn-primary">Add</button>
-      </form>
+      <TodoSection
+        title="Work"
+        items={workItems}
+        addTodo={(name, dueDate) => addTodo(name, dueDate, true)}
+        toggleTodo={toggleTodo}
+        toggleTodoSkipHoliday={toggleTodoSkipHoliday}
+        toggleTodoWeekendOnly={toggleTodoWeekendOnly}
+        toggleTodoIsWork={toggleTodoIsWork}
+        onEdit={openEdit}
+        deleteTodo={deleteTodo}
+        makeFocus={makeFocus}
+        moveLabel="Move to your personal to-do list"
+      />
 
-      <div className="bank-box">
-        <h3 className="section-title" style={{ marginBottom: 10 }}>Task bank</h3>
-        <div className="bank-list">
-          {bankItems.length === 0 && <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>Nothing waiting right now.</div>}
-          {bankItems.map((todo) => (
-            <div key={todo.id} className="card">
-              <div className="card-left">
-                <span className="card-label" style={{ fontWeight: 500 }}>{todo.name}</span>
-                <CategoryTag category={todo.category} />
-                <span className="tag">{todo.durationMins || 30}m</span>
-                {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
-              </div>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
-                <button className="btn" onClick={() => makeFocus(todo.id)}><Sparkles size={12} /> Focus</button>
-                <button className="btn btn-primary" onClick={() => toggleTodo(todo.id)}>Done</button>
-                <ActionMenu
-                  onEdit={() => { setEditingTodo(todo); setEditName(todo.name); }}
-                  onDelete={() => deleteTodo(todo.id)}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <TodoSection
+        title="To-do"
+        items={personalItems}
+        addTodo={(name, dueDate) => addTodo(name, dueDate, false)}
+        toggleTodo={toggleTodo}
+        toggleTodoSkipHoliday={toggleTodoSkipHoliday}
+        toggleTodoWeekendOnly={toggleTodoWeekendOnly}
+        toggleTodoIsWork={toggleTodoIsWork}
+        onEdit={openEdit}
+        deleteTodo={deleteTodo}
+        makeFocus={makeFocus}
+        moveLabel="Move to your work list"
+      />
 
       <div className="vault-box">
         <h3 className="section-title" style={{ marginBottom: 10 }}>Recently completed</h3>
@@ -108,8 +155,9 @@ export default function TodoView({ todos, setTodos, toggleTodo, editTodo, delete
           {vaultItems.map((todo) => (
             <div className="card completed" key={todo.id}>
               <div className="card-left">
+                <Check size={15} style={{ flexShrink: 0 }} />
                 <span className="card-label">{todo.name}</span>
-                <CategoryTag category={todo.category} />
+                {todo.isWork && <span className="pill pill-muted">Work</span>}
               </div>
               <button className="btn-ghost" onClick={() => toggleTodo(todo.id)}>Reopen</button>
             </div>

@@ -20,9 +20,9 @@ const DEFAULT_HABITS = [
 ];
 
 const DEFAULT_TODOS = [
-  { id: 't1', name: 'Submit project proposal', category: 'work', durationMins: 45, dueDate: '', isFocus: true, completed: false, completedAt: null },
-  { id: 't2', name: 'Send follow-up email', category: 'admin', durationMins: 30, dueDate: '', isFocus: false, completed: false, completedAt: null },
-  { id: 't3', name: 'Pick up dry-cleaning', category: 'errands', durationMins: 30, dueDate: '', isFocus: false, completed: false, completedAt: null },
+  { id: 't1', name: 'Submit project proposal', dueDate: '', isFocus: true, completed: false, completedAt: null, skipOnHoliday: false, weekendOnly: false, isWork: true },
+  { id: 't2', name: 'Send follow-up email', dueDate: '', isFocus: false, completed: false, completedAt: null, skipOnHoliday: false, weekendOnly: false, isWork: true },
+  { id: 't3', name: 'Pick up dry-cleaning', dueDate: '', isFocus: false, completed: false, completedAt: null, skipOnHoliday: false, weekendOnly: false, isWork: false },
 ];
 
 const DEFAULT_CHORES = [
@@ -212,10 +212,28 @@ export default function PlannerApp({ user, signOut }) {
     return Date.now() - chore.lastDone >= totalGoalMs;
   }
 
-  // Pulls up to 3 tasks from the bank into focus, prioritizing work on
-  // workdays, boosting overdue chores and due-dated items, and topping up
-  // whichever category has been neglected lately. Only tops up to 3 total —
-  // it never removes anything the person already carried over or added by hand.
+  // Pulls up to 3 tasks from the bank into focus: overdue chores first (auto
+  // creating a bank entry for them if needed), then anything with a due
+  // date (soonest first), then everything else. Skips holiday-paused tasks
+  // while on holiday, and weekend-only tasks except on an actual weekend.
+  // Only tops up to 3 total — never removes anything already carried over
+  // or added by hand.
+  function shuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  // Pulls up to 3 tasks from the bank into focus. Anything with a deadline
+  // goes first (soonest due date wins), then overdue chores, then — on
+  // weekdays only — work tasks get priority, then everything else is
+  // picked at random so it's not always the same tasks resurfacing. Skips
+  // holiday-paused tasks while on holiday, and weekend-only tasks except on
+  // an actual weekend. Only tops up to 3 total — never removes anything
+  // already carried over or added by hand.
   function autoFillFocus(todosList) {
     let list = [...todosList];
 
@@ -225,61 +243,28 @@ export default function PlannerApp({ user, signOut }) {
       .forEach((chore) => {
         const existing = list.find((t) => t.choreId === chore.id && !t.completed);
         if (!existing) {
-          list.push({ id: 't_chore_' + chore.id + '_' + Date.now(), choreId: chore.id, name: chore.name, category: 'chores', durationMins: 30, dueDate: '', isFocus: false, completed: false, completedAt: null });
+          list.push({ id: 't_chore_' + chore.id + '_' + Date.now(), choreId: chore.id, name: chore.name, dueDate: '', isFocus: false, completed: false, completedAt: null, skipOnHoliday: false, weekendOnly: false, isWork: false });
         }
       });
 
     const weekendOrHoliday = isWeekendOrHoliday();
-    const isWorkday = !weekendOrHoliday;
+    const isWeekday = !weekendOrHoliday;
 
-    let bankItems = list.filter((t) => !t.isFocus && !t.completed);
-    if (weekendOrHoliday) bankItems = bankItems.filter((t) => t.category !== 'work');
+    const bankItems = list.filter(
+      (t) => !t.isFocus && !t.completed && !(isHolidayMode && t.skipOnHoliday) && !(t.weekendOnly && !weekendOrHoliday)
+    );
 
-    const completedTodos = list.filter((t) => t.completed);
-    const catCounts = { work: 0, admin: 0, errands: 0, chores: 0, personal: 0 };
-    completedTodos.forEach((t) => { if (catCounts[t.category] !== undefined) catCounts[t.category]++; });
-    const neglectedCat = Object.keys(catCounts).reduce((a, b) => (catCounts[a] < catCounts[b] ? a : b));
+    const withDeadline = bankItems.filter((t) => t.dueDate).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+    const overdueChoreItems = shuffle(bankItems.filter((t) => !t.dueDate && t.choreId));
+    const workItems = isWeekday ? shuffle(bankItems.filter((t) => !t.dueDate && !t.choreId && t.isWork)) : [];
+    const restItems = shuffle(bankItems.filter((t) => !t.dueDate && !t.choreId && !(isWeekday && t.isWork)));
 
-    const scored = bankItems
-      .map((task) => {
-        let score = 0;
-        if (!weekendOrHoliday) {
-          if (task.category === 'work') score += 15;
-          if (task.category === 'admin') score += 10;
-          if (task.category === 'errands') score += 5;
-        }
-        if (task.dueDate) score += 20;
-        if (task.choreId) score += 8;
-        if (task.category === neglectedCat) score += 5;
-        return { id: task.id, score };
-      })
-      .sort((a, b) => b.score - a.score);
+    const ranked = [...withDeadline, ...overdueChoreItems, ...workItems, ...restItems];
 
-    const activeFocusItems = list.filter((t) => t.isFocus && !t.completed);
-    let workMins = activeFocusItems.filter((t) => t.category === 'work').reduce((s, i) => s + (i.durationMins || 30), 0);
-    let nonWorkMins = activeFocusItems.filter((t) => t.category !== 'work').reduce((s, i) => s + (i.durationMins || 30), 0);
-    let errandCount = activeFocusItems.filter((t) => t.category === 'errands').length;
-
-    for (const { id } of scored) {
+    for (const candidate of ranked) {
       const activeCount = list.filter((t) => t.isFocus && !t.completed).length;
       if (activeCount >= 3) break;
-
-      const candidate = list.find((t) => t.id === id);
-      if (!candidate) continue;
-      const candidateMins = candidate.durationMins || 30;
-
-      if (isWorkday && candidate.category === 'errands' && errandCount >= 1) continue;
-
-      if (candidate.category === 'work') {
-        if (workMins + candidateMins <= 120) {
-          list = list.map((t) => (t.id === id ? { ...t, isFocus: true } : t));
-          workMins += candidateMins;
-        }
-      } else if (nonWorkMins + candidateMins <= 60) {
-        list = list.map((t) => (t.id === id ? { ...t, isFocus: true } : t));
-        nonWorkMins += candidateMins;
-        if (candidate.category === 'errands') errandCount++;
-      }
+      list = list.map((t) => (t.id === candidate.id ? { ...t, isFocus: true } : t));
     }
 
     return list;
@@ -343,8 +328,8 @@ export default function PlannerApp({ user, signOut }) {
     setScheduleTasks([]);
 
     let nextTodos = todos.map((t) => (t.isFocus && t.completed ? { ...t, isFocus: false } : t));
-    if (isWeekendOrHoliday()) {
-      nextTodos = nextTodos.map((t) => (t.isFocus && t.category === 'work' ? { ...t, isFocus: false } : t));
+    if (isHolidayMode) {
+      nextTodos = nextTodos.map((t) => (t.isFocus && t.skipOnHoliday ? { ...t, isFocus: false } : t));
     }
 
     const fourteenDays = 14 * 24 * 60 * 60 * 1000;
@@ -500,6 +485,18 @@ export default function PlannerApp({ user, signOut }) {
     setScheduleTasks((prev) => prev.filter((s) => s.todoId !== id));
   }
 
+  function toggleTodoSkipHoliday(id) {
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, skipOnHoliday: !t.skipOnHoliday } : t)));
+  }
+
+  function toggleTodoWeekendOnly(id) {
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, weekendOnly: !t.weekendOnly } : t)));
+  }
+
+  function toggleTodoIsWork(id) {
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, isWork: !t.isWork } : t)));
+  }
+
   // No hard cap — focus is now just "what I've chosen to work on today."
   function makeFocus(id) {
     setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, isFocus: true } : t)));
@@ -516,7 +513,7 @@ export default function PlannerApp({ user, signOut }) {
       }
       return [
         ...prev,
-        { id: 't_' + Date.now(), choreId: chore.id, name: chore.name, category: 'chores', durationMins: 30, dueDate: '', isFocus: true, completed: false, completedAt: null },
+        { id: 't_' + Date.now(), choreId: chore.id, name: chore.name, dueDate: '', isFocus: true, completed: false, completedAt: null, skipOnHoliday: false, weekendOnly: false, isWork: false },
       ];
     });
   }
@@ -553,7 +550,7 @@ export default function PlannerApp({ user, signOut }) {
     const next = !isHolidayMode;
     setIsHolidayMode(next);
     if (next) {
-      setTodos(todos.map((t) => (t.isFocus && t.category === 'work' ? { ...t, isFocus: false } : t)));
+      setTodos(todos.map((t) => (t.isFocus && t.skipOnHoliday ? { ...t, isFocus: false } : t)));
       setHolidayStartedAt(Date.now());
     } else if (holidayStartedAt) {
       // Shift paused chores' clocks forward by however long the holiday
@@ -634,6 +631,9 @@ export default function PlannerApp({ user, signOut }) {
           editTodo={editTodo}
           deleteTodo={deleteTodo}
           makeFocus={makeFocus}
+          toggleTodoSkipHoliday={toggleTodoSkipHoliday}
+          toggleTodoWeekendOnly={toggleTodoWeekendOnly}
+          toggleTodoIsWork={toggleTodoIsWork}
           isHolidayMode={isHolidayMode}
         />
       )}

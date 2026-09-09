@@ -1,6 +1,4 @@
-import { CATEGORIES } from '../data/categories';
-
-export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, todos, groups, weeklyHabits }) {
+export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, groups, weeklyHabits }) {
   const stats = {};
   habits.forEach((h) => { stats[h.name] = { ticked: 0, possible: 0 }; });
   [...habitHistory, ...(weeklyGoalHistory || []), ...(monthlyGoalHistory || [])].forEach((entry) => {
@@ -69,12 +67,6 @@ export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, 
     );
   }
 
-  const completedTodos = todos.filter((t) => t.completed);
-  const catCounts = { work: 0, admin: 0, errands: 0, chores: 0, personal: 0 };
-  completedTodos.forEach((t) => { if (catCounts[t.category] !== undefined) catCounts[t.category]++; });
-  const total = completedTodos.length || 1;
-  const maxCat = Object.keys(catCounts).reduce((a, b) => (catCounts[a] > catCounts[b] ? a : b));
-
   return (
     <div className="view">
       <div className="section-row">
@@ -110,22 +102,6 @@ export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, 
             )}
           </>
         )}
-      </div>
-
-      <div className="balance-box">
-        <h4>Completed task balance</h4>
-        <div className="balance-bar">
-          {Object.keys(catCounts).map((cat) => (
-            <div key={cat} style={{ width: `${(catCounts[cat] / total) * 100}%`, background: CATEGORIES[cat].color }} title={CATEGORIES[cat].label} />
-          ))}
-        </div>
-        <p className="balance-warning">
-          {completedTodos.length === 0
-            ? 'Complete tasks to see your category balance.'
-            : catCounts[maxCat] / total > 0.5
-            ? `Completed tasks lean heavily toward ${CATEGORIES[maxCat].label.toLowerCase()}. Worth shifting focus.`
-            : 'Completed tasks are fairly balanced across categories.'}
-        </p>
       </div>
     </div>
   );

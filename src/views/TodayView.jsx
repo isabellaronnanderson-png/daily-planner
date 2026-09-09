@@ -269,9 +269,6 @@ export default function TodayView({
   }
 
   const focusItems = todos.filter((t) => t.isFocus && !t.completed);
-  const workMins = focusItems.filter((t) => t.category === 'work').reduce((s, i) => s + (i.durationMins || 30), 0);
-  const nonWorkMins = focusItems.filter((t) => t.category !== 'work').reduce((s, i) => s + (i.durationMins || 30), 0);
-  const overCapacity = workMins > 120 || nonWorkMins > 60;
 
   const visibleHabits = habits.filter((h) => !(isHolidayMode && h.skipOnHoliday));
 
@@ -345,6 +342,7 @@ export default function TodayView({
                   <div className="card-left">
                     <span className="card-label" style={{ fontWeight: 500 }}>{todo.name}</span>
                     {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
+                    {todo.isWork && <span className="pill pill-muted">Work</span>}
                   </div>
                   <div className="day-row-actions" draggable={false} onDragStart={(e) => e.stopPropagation()}>
                     <button className="btn btn-sm" onClick={() => promoteToSchedule(todo.id)}>Schedule</button>
@@ -476,10 +474,6 @@ export default function TodayView({
           <Plus size={13} /> New group
         </button>
       )}
-
-      <p className={`capacity-text ${overCapacity ? 'over' : ''}`}>
-        Focus workload: {(workMins / 60).toFixed(1)}h work / 2.0h max &middot; {(nonWorkMins / 60).toFixed(1)}h other / 1.0h max
-      </p>
 
       <div className="scratchpad-box">
         <h4>Scratchpad</h4>
