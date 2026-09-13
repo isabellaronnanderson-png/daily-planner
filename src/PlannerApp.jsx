@@ -3,13 +3,12 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 import { useCloudSync } from './hooks/useCloudSync';
 import Header from './components/Header';
 import TodayView from './views/TodayView';
-import ScheduleView from './views/ScheduleView';
 import TodoView from './views/TodoView';
 import ChoresView from './views/ChoresView';
 import InsightsView from './views/InsightsView';
 import './App.css';
 
-const DEFAULT_TAB_ORDER = ['habits', 'todo', 'chores', 'schedule', 'insights'];
+const DEFAULT_TAB_ORDER = ['habits', 'todo', 'chores', 'insights'];
 
 const DEFAULT_WEEKLY_HABITS = [];
 
@@ -71,8 +70,6 @@ export default function PlannerApp({ user, signOut }) {
   const [groups, setGroups] = useLocalStorage('planner_habit_groups', []);
   const [todoSectionCollapsed, setTodoSectionCollapsed] = useLocalStorage('planner_todo_section_collapsed', false);
 
-  const [scheduleTasks, setScheduleTasks] = useLocalStorage('planner_schedule', []);
-
   const [todos, setTodos] = useLocalStorage('planner_todos', DEFAULT_TODOS);
   const [isHolidayMode, setIsHolidayMode] = useLocalStorage('planner_holiday_mode', false);
   const [holidayStartedAt, setHolidayStartedAt] = useLocalStorage('planner_holiday_started_at', null);
@@ -82,14 +79,14 @@ export default function PlannerApp({ user, signOut }) {
 
   const [chores, setChores] = useLocalStorage('planner_chores', DEFAULT_CHORES);
 
-  const safeTabOrder = [...tabOrder, ...DEFAULT_TAB_ORDER.filter((k) => !tabOrder.includes(k))].filter((k) => k !== 'weekend');
+  const safeTabOrder = [...tabOrder, ...DEFAULT_TAB_ORDER.filter((k) => !tabOrder.includes(k))].filter((k) => k !== 'weekend' && k !== 'schedule');
 
   // Every piece of the app's data, collected into one object — this is what
   // gets synced to Supabase and what a backup file contains.
   const appState = {
     tabOrder, coverImage, coverPosition, currentDate, weekKey, monthKey, title,
     habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, weeklyHabits, groups,
-    todoSectionCollapsed, scheduleTasks, todos, isHolidayMode, holidayStartedAt,
+    todoSectionCollapsed, todos, isHolidayMode, holidayStartedAt,
     scratchpad, dailyNoteText, dailyNoteImage, chores,
   };
 
@@ -112,7 +109,6 @@ export default function PlannerApp({ user, signOut }) {
     if (data.weeklyHabits !== undefined) setWeeklyHabits(data.weeklyHabits);
     if (data.groups !== undefined) setGroups(data.groups);
     if (data.todoSectionCollapsed !== undefined) setTodoSectionCollapsed(data.todoSectionCollapsed);
-    if (data.scheduleTasks !== undefined) setScheduleTasks(data.scheduleTasks);
     if (data.todos !== undefined) setTodos(data.todos);
     if (data.isHolidayMode !== undefined) setIsHolidayMode(data.isHolidayMode);
     if (data.holidayStartedAt !== undefined) setHolidayStartedAt(data.holidayStartedAt);
@@ -251,7 +247,7 @@ export default function PlannerApp({ user, signOut }) {
     const isWeekday = !weekendOrHoliday;
 
     const bankItems = list.filter(
-      (t) => t.name.trim() && !t.isFocus && !t.completed && !(isHolidayMode && t.skipOnHoliday) && !(t.weekendOnly && !weekendOrHoliday)
+      (t) => t.name.trim() && !t.isFocus && !t.completed && !t.longTerm && !(isHolidayMode && t.skipOnHoliday) && !(t.weekendOnly && !weekendOrHoliday)
     );
 
     const withDeadline = bankItems.filter((t) => t.dueDate).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
@@ -324,8 +320,6 @@ export default function PlannerApp({ user, signOut }) {
     setCurrentDate(new Date().toISOString());
     if (isNewWeek) setWeekKey(newWeekKey);
     if (isNewMonth) setMonthKey(newMonthKey);
-
-    setScheduleTasks([]);
 
     let nextTodos = todos.map((t) => (t.isFocus && t.completed ? { ...t, isFocus: false } : t));
     if (isHolidayMode) {
@@ -472,7 +466,6 @@ export default function PlannerApp({ user, signOut }) {
         return { ...t, completed: nextDone, completedAt: nextDone ? Date.now() : null, isFocus: false };
       })
     );
-    setScheduleTasks((prev) => prev.map((s) => (s.todoId === id ? { ...s, completed: !s.completed } : s)));
   }
 
   function editTodo(id, newName) {
@@ -482,7 +475,6 @@ export default function PlannerApp({ user, signOut }) {
 
   function deleteTodo(id) {
     setTodos((prev) => prev.filter((t) => t.id !== id));
-    setScheduleTasks((prev) => prev.filter((s) => s.todoId !== id));
   }
 
   function toggleTodoSkipHoliday(id) {
@@ -524,26 +516,6 @@ export default function PlannerApp({ user, signOut }) {
 
   function reorderFocusTodos(draggedId, targetId) {
     setTodos((prev) => reorderById(prev, draggedId, targetId));
-  }
-
-  function promoteToSchedule(id) {
-    const target = todos.find((t) => t.id === id);
-    if (!target) return;
-    const existing = scheduleTasks.find((s) => s.todoId === id);
-    if (!existing) {
-      const now = new Date();
-      let h = now.getHours();
-      let m = now.getMinutes();
-      if (m > 0 && m <= 30) m = 30; else { m = 0; h += 1; }
-      if (h < 7) { h = 7; m = 0; }
-      if (h > 18) { h = 18; m = 0; }
-      const topPx = Math.max(0, Math.min(660, (h - 7) * 60 + m));
-      setScheduleTasks([
-        ...scheduleTasks,
-        { id: 's_' + Date.now(), todoId: target.id, name: target.name, topPx, durationMins: target.durationMins || 30, category: target.category || 'personal', completed: target.completed },
-      ]);
-    }
-    setActiveTab('schedule');
   }
 
   function toggleHolidayMode() {
@@ -603,7 +575,6 @@ export default function PlannerApp({ user, signOut }) {
           toggleTodo={toggleTodo}
           removeFromFocus={removeFromFocus}
           reorderFocusTodos={reorderFocusTodos}
-          promoteToSchedule={promoteToSchedule}
           makeFocus={makeFocus}
           focusChore={focusChore}
           todoSectionCollapsed={todoSectionCollapsed}
@@ -619,9 +590,6 @@ export default function PlannerApp({ user, signOut }) {
           dailyNoteImage={dailyNoteImage}
           setDailyNoteImage={setDailyNoteImage}
         />
-      )}
-      {activeTab === 'schedule' && (
-        <ScheduleView tasks={scheduleTasks} setTasks={setScheduleTasks} />
       )}
       {activeTab === 'todo' && (
         <TodoView

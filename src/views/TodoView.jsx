@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Square, X, Sparkles, Plane, Sun, CalendarDays } from 'lucide-react';
+import { Check, X, Sparkles, Plane, Sun, CalendarDays, Flag } from 'lucide-react';
 import CalendarPopover from '../components/CalendarPopover';
 
 function IconToggle({ active, onClick, icon: Icon, label, activeColor = 'var(--navy)' }) {
@@ -40,7 +40,7 @@ function DeadlineButton({ dueDate, onSelect, onClear }) {
   );
 }
 
-function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, deleteTodo, makeFocus, insertAfter, focusPrevious, inputRefs }) {
+function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, insertAfter, focusPrevious, inputRefs }) {
   function handleKeyDown(e) {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -57,8 +57,8 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
   return (
     <div className="card todo-checklist-row">
       <div className="card-left" style={{ flex: 1 }}>
-        <button className="check-btn unchecked" onClick={() => toggleTodo(todo.id)} aria-label="Mark complete">
-          <Square size={16} />
+        <button className="chore-done-btn" onClick={() => toggleTodo(todo.id)} aria-label="Mark done" title="Mark done">
+          <Check size={14} />
         </button>
         <input
           ref={(el) => { if (el) inputRefs.current[todo.id] = el; else delete inputRefs.current[todo.id]; }}
@@ -72,6 +72,7 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
         {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
       </div>
       <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+        <IconToggle active={todo.longTerm} onClick={() => toggleLongTerm(todo.id)} icon={Flag} label={todo.longTerm ? "Long-term — won't be pulled into Today automatically" : 'Mark as long-term (kept out of daily pulls)'} />
         <IconToggle active={todo.skipOnHoliday} onClick={() => toggleSkipHoliday(todo.id)} icon={Plane} label={todo.skipOnHoliday ? 'Pauses on holiday — click to unpause' : 'Pause this task during holiday mode'} />
         <IconToggle active={todo.weekendOnly} onClick={() => toggleWeekendOnly(todo.id)} icon={Sun} label={todo.weekendOnly ? 'Only pulled in on weekends — click to allow any day' : 'Only relevant on weekends'} />
         <DeadlineButton dueDate={todo.dueDate} onSelect={(d) => setDueDate(todo.id, d)} onClear={() => setDueDate(todo.id, '')} />
@@ -84,7 +85,7 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
   );
 }
 
-function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, deleteTodo, makeFocus, insertAfter, appendBlank }) {
+function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, insertAfter, appendBlank }) {
   const inputRefs = useRef({});
   const pendingFocusId = useRef(null);
 
@@ -127,6 +128,7 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
             setDueDate={setDueDate}
             toggleSkipHoliday={toggleSkipHoliday}
             toggleWeekendOnly={toggleWeekendOnly}
+            toggleLongTerm={toggleLongTerm}
             deleteTodo={deleteTodo}
             makeFocus={makeFocus}
             insertAfter={handleInsertAfter}
@@ -153,6 +155,7 @@ export default function TodoView({
       completedAt: null,
       skipOnHoliday: false,
       weekendOnly: false,
+      longTerm: false,
       isWork,
     };
   }
@@ -181,6 +184,10 @@ export default function TodoView({
     setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, dueDate } : t)));
   }
 
+  function toggleLongTerm(id) {
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, longTerm: !t.longTerm } : t)));
+  }
+
   const workItems = todos.filter((t) => !t.isFocus && !t.completed && t.isWork);
   const personalItems = todos.filter((t) => !t.isFocus && !t.completed && !t.isWork);
 
@@ -198,6 +205,7 @@ export default function TodoView({
         setDueDate={setDueDate}
         toggleSkipHoliday={toggleTodoSkipHoliday}
         toggleWeekendOnly={toggleTodoWeekendOnly}
+        toggleLongTerm={toggleLongTerm}
         deleteTodo={deleteTodo}
         makeFocus={makeFocus}
         insertAfter={(afterId) => insertAfter(afterId, false)}
@@ -212,6 +220,7 @@ export default function TodoView({
         setDueDate={setDueDate}
         toggleSkipHoliday={toggleTodoSkipHoliday}
         toggleWeekendOnly={toggleTodoWeekendOnly}
+        toggleLongTerm={toggleLongTerm}
         deleteTodo={deleteTodo}
         makeFocus={makeFocus}
         insertAfter={(afterId) => insertAfter(afterId, true)}

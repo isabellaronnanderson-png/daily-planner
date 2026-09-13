@@ -92,7 +92,7 @@ export default function TodayView({
   groups, addGroup, toggleGroupCollapsed, deleteGroup,
   onBeginNewDay,
   weeklyHabits, setWeeklyHabits,
-  todos, toggleTodo, removeFromFocus, reorderFocusTodos, promoteToSchedule, makeFocus, focusChore,
+  todos, toggleTodo, removeFromFocus, reorderFocusTodos, makeFocus, focusChore,
   todoSectionCollapsed, setTodoSectionCollapsed,
   isHolidayMode, toggleHolidayMode,
   chores, resetChore,
@@ -104,6 +104,7 @@ export default function TodayView({
   const [newTarget, setNewTarget] = useState(1);
   const [newCadence, setNewCadence] = useState('day');
   const [newSkipHoliday, setNewSkipHoliday] = useState(false);
+  const [newGroupId, setNewGroupId] = useState('');
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
 
@@ -144,11 +145,12 @@ export default function TodayView({
   function submitHabit(e) {
     e.preventDefault();
     if (!name.trim()) return;
-    addHabit({ name: name.trim(), targetCount: parseInt(newTarget, 10) || 1, cadence: newCadence, skipOnHoliday: newSkipHoliday });
+    addHabit({ name: name.trim(), targetCount: parseInt(newTarget, 10) || 1, cadence: newCadence, skipOnHoliday: newSkipHoliday, groupId: newGroupId || null });
     setName('');
     setNewTarget(1);
     setNewCadence('day');
     setNewSkipHoliday(false);
+    setNewGroupId('');
   }
 
   function submitGroup(e) {
@@ -345,7 +347,6 @@ export default function TodayView({
                     {todo.isWork && <span className="pill pill-muted">Work</span>}
                   </div>
                   <div className="day-row-actions" draggable={false} onDragStart={(e) => e.stopPropagation()}>
-                    <button className="btn btn-sm" onClick={() => promoteToSchedule(todo.id)}>Schedule</button>
                     <button className="btn btn-primary btn-sm" onClick={() => toggleTodo(todo.id)}>Done</button>
                     <button className="btn-ghost btn-danger" onClick={() => removeFromFocus(todo.id)}>Remove</button>
                   </div>
@@ -367,8 +368,15 @@ export default function TodayView({
             onDragOver={(e) => { e.preventDefault(); setGroupDragOverId(group.id); }}
             onDragLeave={() => setGroupDragOverId(null)}
             onDrop={() => {
-              if (groupDragId) reorderGroups(groupDragId, group.id);
-              setGroupDragId(null);
+              if (groupDragId) {
+                reorderGroups(groupDragId, group.id);
+                setGroupDragId(null);
+                setGroupDragOverId(null);
+              } else if (dragId) {
+                reorderHabits(dragId, null, group.id);
+                setDragId(null);
+                setDragOverId(null);
+              }
               setGroupDragOverId(null);
             }}
           >
@@ -552,6 +560,12 @@ export default function TodayView({
           <option value="day">Daily</option>
           <option value="week">Weekly</option>
           <option value="month">Monthly</option>
+        </select>
+        <select value={newGroupId} onChange={(e) => setNewGroupId(e.target.value)}>
+          <option value="">No group</option>
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
         </select>
         <label className="toggle-pill">
           <input type="checkbox" checked={newSkipHoliday} onChange={(e) => setNewSkipHoliday(e.target.checked)} />

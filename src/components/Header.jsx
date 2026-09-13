@@ -7,7 +7,6 @@ export const TAB_META = {
   habits: 'Today',
   todo: 'To-do',
   chores: 'Chores',
-  schedule: 'Schedule',
   insights: 'Insights',
 };
 
