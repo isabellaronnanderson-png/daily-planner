@@ -40,7 +40,7 @@ function DeadlineButton({ dueDate, onSelect, onClear }) {
   );
 }
 
-function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, insertAfter, focusPrevious, inputRefs }) {
+function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, insertAfter, focusPrevious, inputRefs }) {
   function handleKeyDown(e) {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -55,7 +55,7 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
   }
 
   return (
-    <div className="card todo-checklist-row">
+    <div className={`card todo-checklist-row ${todo.isFocus ? 'todo-in-today' : ''}`}>
       <div className="card-left" style={{ flex: 1 }}>
         <button className="chore-done-btn" onClick={() => toggleTodo(todo.id)} aria-label="Mark done" title="Mark done">
           <Check size={14} />
@@ -70,13 +70,18 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
           onKeyDown={handleKeyDown}
         />
         {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
+        {todo.isFocus && <span className="pill pill-muted">In Today</span>}
       </div>
       <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
         <IconToggle active={todo.longTerm} onClick={() => toggleLongTerm(todo.id)} icon={Flag} label={todo.longTerm ? "Long-term — won't be pulled into Today automatically" : 'Mark as long-term (kept out of daily pulls)'} />
         <IconToggle active={todo.skipOnHoliday} onClick={() => toggleSkipHoliday(todo.id)} icon={Plane} label={todo.skipOnHoliday ? 'Pauses on holiday — click to unpause' : 'Pause this task during holiday mode'} />
         <IconToggle active={todo.weekendOnly} onClick={() => toggleWeekendOnly(todo.id)} icon={Sun} label={todo.weekendOnly ? 'Only pulled in on weekends — click to allow any day' : 'Only relevant on weekends'} />
         <DeadlineButton dueDate={todo.dueDate} onSelect={(d) => setDueDate(todo.id, d)} onClear={() => setDueDate(todo.id, '')} />
-        <button className="btn btn-sm" onClick={() => makeFocus(todo.id)}><Sparkles size={12} /> Focus</button>
+        {todo.isFocus ? (
+          <button className="btn-ghost btn-danger" onClick={() => removeFromFocus(todo.id)}>Remove from Today</button>
+        ) : (
+          <button className="btn btn-sm" onClick={() => makeFocus(todo.id)}><Sparkles size={12} /> Focus</button>
+        )}
         <button className="chore-remove" onClick={() => deleteTodo(todo.id)} aria-label="Delete">
           <X size={15} />
         </button>
@@ -85,7 +90,7 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
   );
 }
 
-function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, insertAfter, appendBlank }) {
+function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, insertAfter, appendBlank }) {
   const inputRefs = useRef({});
   const pendingFocusId = useRef(null);
 
@@ -131,6 +136,7 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
             toggleLongTerm={toggleLongTerm}
             deleteTodo={deleteTodo}
             makeFocus={makeFocus}
+            removeFromFocus={removeFromFocus}
             insertAfter={handleInsertAfter}
             focusPrevious={handleFocusPrevious}
             inputRefs={inputRefs}
@@ -142,7 +148,7 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
 }
 
 export default function TodoView({
-  todos, setTodos, toggleTodo, deleteTodo, makeFocus,
+  todos, setTodos, toggleTodo, deleteTodo, makeFocus, removeFromFocus,
   toggleTodoSkipHoliday, toggleTodoWeekendOnly, toggleTodoIsWork,
 }) {
   function blankTodo(isWork) {
@@ -188,8 +194,8 @@ export default function TodoView({
     setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, longTerm: !t.longTerm } : t)));
   }
 
-  const workItems = todos.filter((t) => !t.isFocus && !t.completed && t.isWork);
-  const personalItems = todos.filter((t) => !t.isFocus && !t.completed && !t.isWork);
+  const workItems = todos.filter((t) => !t.completed && t.isWork);
+  const personalItems = todos.filter((t) => !t.completed && !t.isWork);
 
   return (
     <div className="view">
@@ -208,6 +214,7 @@ export default function TodoView({
         toggleLongTerm={toggleLongTerm}
         deleteTodo={deleteTodo}
         makeFocus={makeFocus}
+        removeFromFocus={removeFromFocus}
         insertAfter={(afterId) => insertAfter(afterId, false)}
         appendBlank={() => appendBlank(false)}
       />
@@ -223,6 +230,7 @@ export default function TodoView({
         toggleLongTerm={toggleLongTerm}
         deleteTodo={deleteTodo}
         makeFocus={makeFocus}
+        removeFromFocus={removeFromFocus}
         insertAfter={(afterId) => insertAfter(afterId, true)}
         appendBlank={() => appendBlank(true)}
       />

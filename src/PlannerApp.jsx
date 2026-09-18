@@ -67,6 +67,7 @@ export default function PlannerApp({ user, signOut }) {
   const [weeklyGoalHistory, setWeeklyGoalHistory] = useLocalStorage('planner_weekly_goal_history', []);
   const [monthlyGoalHistory, setMonthlyGoalHistory] = useLocalStorage('planner_monthly_goal_history', []);
   const [weeklyHabits, setWeeklyHabits] = useLocalStorage('planner_weekly_habits', DEFAULT_WEEKLY_HABITS);
+  const [intervalHabits, setIntervalHabits] = useLocalStorage('planner_interval_habits', []);
   const [groups, setGroups] = useLocalStorage('planner_habit_groups', []);
   const [todoSectionCollapsed, setTodoSectionCollapsed] = useLocalStorage('planner_todo_section_collapsed', false);
 
@@ -74,8 +75,15 @@ export default function PlannerApp({ user, signOut }) {
   const [isHolidayMode, setIsHolidayMode] = useLocalStorage('planner_holiday_mode', false);
   const [holidayStartedAt, setHolidayStartedAt] = useLocalStorage('planner_holiday_started_at', null);
   const [scratchpad, setScratchpad] = useLocalStorage('planner_scratchpad', '');
+  const [notes, setNotes] = useLocalStorage('planner_notes', []);
+  const [activeNoteId, setActiveNoteId] = useLocalStorage('planner_active_note_id', null);
   const [dailyNoteText, setDailyNoteText] = useLocalStorage('planner_daily_note_text', '');
   const [dailyNoteImage, setDailyNoteImage] = useLocalStorage('planner_daily_note_image', null);
+  const [dailyPriorities, setDailyPriorities] = useLocalStorage('planner_daily_priorities', [
+    { text: '', done: false },
+    { text: '', done: false },
+    { text: '', done: false },
+  ]);
 
   const [chores, setChores] = useLocalStorage('planner_chores', DEFAULT_CHORES);
 
@@ -85,9 +93,9 @@ export default function PlannerApp({ user, signOut }) {
   // gets synced to Supabase and what a backup file contains.
   const appState = {
     tabOrder, coverImage, coverPosition, currentDate, weekKey, monthKey, title,
-    habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, weeklyHabits, groups,
+    habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, weeklyHabits, intervalHabits, groups,
     todoSectionCollapsed, todos, isHolidayMode, holidayStartedAt,
-    scratchpad, dailyNoteText, dailyNoteImage, chores,
+    scratchpad, notes, activeNoteId, dailyNoteText, dailyNoteImage, dailyPriorities, chores,
   };
 
   // Applies a full state blob (from the cloud or a restored backup file) —
@@ -107,14 +115,18 @@ export default function PlannerApp({ user, signOut }) {
     if (data.weeklyGoalHistory !== undefined) setWeeklyGoalHistory(data.weeklyGoalHistory);
     if (data.monthlyGoalHistory !== undefined) setMonthlyGoalHistory(data.monthlyGoalHistory);
     if (data.weeklyHabits !== undefined) setWeeklyHabits(data.weeklyHabits);
+    if (data.intervalHabits !== undefined) setIntervalHabits(data.intervalHabits);
     if (data.groups !== undefined) setGroups(data.groups);
     if (data.todoSectionCollapsed !== undefined) setTodoSectionCollapsed(data.todoSectionCollapsed);
     if (data.todos !== undefined) setTodos(data.todos);
     if (data.isHolidayMode !== undefined) setIsHolidayMode(data.isHolidayMode);
     if (data.holidayStartedAt !== undefined) setHolidayStartedAt(data.holidayStartedAt);
     if (data.scratchpad !== undefined) setScratchpad(data.scratchpad);
+    if (data.notes !== undefined) setNotes(data.notes);
+    if (data.activeNoteId !== undefined) setActiveNoteId(data.activeNoteId);
     if (data.dailyNoteText !== undefined) setDailyNoteText(data.dailyNoteText);
     if (data.dailyNoteImage !== undefined) setDailyNoteImage(data.dailyNoteImage);
+    if (data.dailyPriorities !== undefined) setDailyPriorities(data.dailyPriorities);
     if (data.chores !== undefined) setChores(data.chores);
   }
 
@@ -148,6 +160,17 @@ export default function PlannerApp({ user, signOut }) {
   }
 
 
+  // One-time migration: fold the old single scratchpad into the new
+  // multi-note system as its first note, so existing notes aren't lost.
+  useEffect(() => {
+    if (notes.length === 0) {
+      const id = 'note_' + Date.now();
+      setNotes([{ id, title: 'Notes', content: scratchpad || '' }]);
+      setActiveNoteId(id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // One-time migration: fold any existing separate weekend tasks into
   // day-specific habits tagged for Saturday + Sunday, then retire the old data.
   useEffect(() => {
@@ -176,7 +199,7 @@ export default function PlannerApp({ user, signOut }) {
   // habit or day-specific habit definition, it was deleted — drop it from
   // history too (including any stragglers left over from before this existed).
   useEffect(() => {
-    const validNames = new Set([...habits.map((h) => h.name), ...weeklyHabits.map((w) => w.name)]);
+    const validNames = new Set([...habits.map((h) => h.name), ...weeklyHabits.map((w) => w.name), ...intervalHabits.map((w) => w.name)]);
     function pruneWith(setter) {
       setter((prev) => {
         let changed = false;
@@ -192,7 +215,7 @@ export default function PlannerApp({ user, signOut }) {
     pruneWith(setWeeklyGoalHistory);
     pruneWith(setMonthlyGoalHistory);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [habits, weeklyHabits]);
+  }, [habits, weeklyHabits, intervalHabits]);
 
   function resetChore(id) {
     setChores(chores.map((c) => (c.id === id ? { ...c, lastDone: Date.now() } : c)));
@@ -283,7 +306,7 @@ export default function PlannerApp({ user, signOut }) {
     const toSnapshotItem = (h) => ({ name: h.name, completed: h.completed, count: h.count || 0, target: h.targetCount || 1 });
     const notPaused = (h) => !(isHolidayMode && h.skipOnHoliday);
 
-    const dailySnapshot = habits.filter((h) => notPaused(h) && h.cadence !== 'week' && h.cadence !== 'month').map(toSnapshotItem);
+    const dailySnapshot = habits.filter((h) => notPaused(h) && h.cadence !== 'week' && h.cadence !== 'month' && !h.fromInterval).map(toSnapshotItem);
     setHabitHistory([{ date: closingDateKey, snapshot: dailySnapshot }, ...habitHistory].slice(0, 14));
 
     if (isNewWeek) {
@@ -299,9 +322,40 @@ export default function PlannerApp({ user, signOut }) {
       }
     }
 
+    // Recurring "every N weeks/months" habits: once one is completed, it
+    // disappears immediately (a display-level filter elsewhere), and here —
+    // once a day — we notice that and reset its own clock so it comes back
+    // right on schedule instead of every day.
+    const nowMs = Date.now();
+    const currentIntervalInstances = habits.filter((h) => h.fromInterval);
+    const survivingIntervalInstances = currentIntervalInstances.filter((h) => !h.completed);
+    const completedIntervalIds = new Set(currentIntervalInstances.filter((h) => h.completed).map((h) => h.intervalHabitId));
+    const nextIntervalHabits = intervalHabits.map((ih) =>
+      completedIntervalIds.has(ih.id) ? { ...ih, lastShown: nowMs } : ih
+    );
+    const presentIntervalHabitIds = new Set(survivingIntervalInstances.map((h) => h.intervalHabitId));
+    const newIntervalInjections = nextIntervalHabits
+      .filter((ih) => {
+        if (isHolidayMode && ih.skipOnHoliday) return false;
+        const intervalMs = ih.intervalVal * (ih.intervalUnit === 'months' ? 30 : 7) * 24 * 60 * 60 * 1000;
+        return nowMs - ih.lastShown >= intervalMs && !presentIntervalHabitIds.has(ih.id);
+      })
+      .map((ih) => ({
+        id: 'ih_' + ih.id + '_' + nowMs,
+        name: ih.name,
+        completed: false,
+        count: 0,
+        targetCount: 1,
+        groupId: ih.groupId || null,
+        fromInterval: true,
+        intervalHabitId: ih.id,
+        skipOnHoliday: !!ih.skipOnHoliday,
+      }));
+    setIntervalHabits(nextIntervalHabits);
+
     const todaysWeekday = WEEKDAY_KEYS[new Date().getDay()];
     const baseHabits = habits
-      .filter((h) => !h.fromWeekly)
+      .filter((h) => !h.fromWeekly && !h.fromInterval)
       .map((h) => {
         if (h.cadence === 'week') {
           // Carry over untouched until a new week begins.
@@ -316,10 +370,11 @@ export default function PlannerApp({ user, signOut }) {
     const injected = weeklyHabits
       .filter((w) => w.days.includes(todaysWeekday))
       .map((w) => ({ id: 'wh_' + w.id, name: w.name, completed: false, count: 0, targetCount: 1, groupId: w.groupId || null, fromWeekly: true, skipOnHoliday: !!w.skipOnHoliday }));
-    setHabits([...baseHabits, ...injected]);
+    setHabits([...baseHabits, ...injected, ...survivingIntervalInstances, ...newIntervalInjections]);
     setCurrentDate(new Date().toISOString());
     if (isNewWeek) setWeekKey(newWeekKey);
     if (isNewMonth) setMonthKey(newMonthKey);
+    setDailyPriorities([{ text: '', done: false }, { text: '', done: false }, { text: '', done: false }]);
 
     let nextTodos = todos.map((t) => (t.isFocus && t.completed ? { ...t, isFocus: false } : t));
     if (isHolidayMode) {
@@ -571,6 +626,8 @@ export default function PlannerApp({ user, signOut }) {
           onBeginNewDay={beginNewDay}
           weeklyHabits={weeklyHabits}
           setWeeklyHabits={setWeeklyHabits}
+          intervalHabits={intervalHabits}
+          setIntervalHabits={setIntervalHabits}
           todos={todos}
           toggleTodo={toggleTodo}
           removeFromFocus={removeFromFocus}
@@ -583,12 +640,16 @@ export default function PlannerApp({ user, signOut }) {
           toggleHolidayMode={toggleHolidayMode}
           chores={chores}
           resetChore={resetChore}
-          scratchpad={scratchpad}
-          setScratchpad={setScratchpad}
+          notes={notes}
+          setNotes={setNotes}
+          activeNoteId={activeNoteId}
+          setActiveNoteId={setActiveNoteId}
           dailyNoteText={dailyNoteText}
           setDailyNoteText={setDailyNoteText}
           dailyNoteImage={dailyNoteImage}
           setDailyNoteImage={setDailyNoteImage}
+          dailyPriorities={dailyPriorities}
+          setDailyPriorities={setDailyPriorities}
         />
       )}
       {activeTab === 'todo' && (
@@ -599,6 +660,7 @@ export default function PlannerApp({ user, signOut }) {
           editTodo={editTodo}
           deleteTodo={deleteTodo}
           makeFocus={makeFocus}
+          removeFromFocus={removeFromFocus}
           toggleTodoSkipHoliday={toggleTodoSkipHoliday}
           toggleTodoWeekendOnly={toggleTodoWeekendOnly}
           toggleTodoIsWork={toggleTodoIsWork}

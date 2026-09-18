@@ -679,6 +679,151 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
   line-height: 1.6;
 }
 
+/* ===== Multi-note tabs ===== */
+.notes-tab-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.notes-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px 8px;
+  border-bottom: 2px solid transparent;
+  flex-shrink: 0;
+}
+.notes-tab.active {
+  border-bottom-color: var(--text);
+}
+.notes-tab-label {
+  background: none;
+  border: none;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  padding: 0;
+  white-space: nowrap;
+}
+.notes-tab.active .notes-tab-label {
+  color: var(--text);
+  font-weight: 500;
+}
+.notes-tab-input {
+  border: none;
+  border-bottom: 1px solid var(--border-strong);
+  background: none;
+  font-size: 12.5px;
+  color: var(--text);
+  padding: 0;
+  width: 80px;
+  outline: none;
+}
+.notes-tab-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  display: flex;
+  padding: 0;
+}
+.notes-tab-close:hover {
+  color: var(--red);
+}
+.notes-tab-add {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  padding: 0 4px 8px;
+  flex-shrink: 0;
+}
+.notes-tab-add:hover {
+  color: var(--text);
+}
+
+/* ===== Top priorities widget ===== */
+.priorities-box {
+  border: 1.5px solid var(--text);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.2rem 0.5rem;
+  margin-bottom: 1.5rem;
+}
+.priorities-title {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-style: italic;
+  font-size: 17px;
+  color: var(--text);
+  margin: 0 0 10px;
+}
+.priorities-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+.priorities-row:first-of-type {
+  border-top: none;
+}
+.priorities-input {
+  border: none;
+  background: none;
+  outline: none;
+  flex: 1;
+  font-size: 14.5px;
+  color: var(--text);
+  padding: 0;
+}
+.priorities-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* ===== Unified habit groups list (notes-app style) ===== */
+.day-list-outer {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 0.75rem;
+}
+.day-section {
+  border-bottom: 1px solid var(--border);
+}
+.day-section:last-child {
+  border-bottom: none;
+}
+.day-section-header {
+  width: 100%;
+  background: var(--surface);
+  border: none;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+.day-section-header:hover {
+  background: var(--surface-hover);
+}
+.day-list-outer > .day-section:first-child > .day-section-header {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.day-section-body {
+  padding: 0;
+}
+.day-section-label {
+  padding: 8px 14px 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+
 /* ===== Suggestions banner ===== */
 .banner {
   border: 1px solid var(--red-bg);
@@ -917,6 +1062,9 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
 /* ===== To-do checklist row ===== */
 .todo-checklist-row {
   gap: 8px;
+}
+.todo-in-today {
+  background: var(--navy-bg);
 }
 .todo-inline-input,
 input.todo-inline-input {
@@ -1330,4 +1478,92 @@ input.todo-inline-input {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 1.25rem;
+}
+
+/* ===== Mobile ===== */
+@media (max-width: 640px) {
+  #root {
+    max-width: 100%;
+  }
+  .cover {
+    height: 150px;
+  }
+  .header-block {
+    padding: 1.1rem 1rem 0.4rem;
+  }
+  .header-title,
+  .title-input {
+    font-size: 24px;
+  }
+  .tabs {
+    padding: 0 1rem;
+    gap: 1.2rem;
+    margin-top: 1rem;
+  }
+  .view {
+    padding: 1.1rem 1rem 0;
+  }
+  .section-row {
+    align-items: flex-start;
+  }
+
+  .form-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .form-row input,
+  .form-row select,
+  .form-row button,
+  .form-row label.toggle-pill {
+    width: 100%;
+    justify-content: center;
+  }
+  .form-row input[type="text"] {
+    min-width: 0;
+  }
+
+  .day-row,
+  .card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .day-row-actions,
+  .card > div:last-child {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .card-left {
+    width: 100%;
+  }
+
+  .todo-checklist-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .priorities-box,
+  .daily-note,
+  .scratchpad-box,
+  .day-list-outer,
+  .collapsible,
+  .banner {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .modal {
+    max-width: calc(100vw - 2rem);
+  }
+
+  .header-utility-row {
+    top: 8px;
+    right: 8px;
+  }
+
+  .bank-list .card,
+  .vault-list .card {
+    border-radius: 0;
+  }
 }

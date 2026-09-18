@@ -1,7 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
-import { Check, Square, X, Sparkles, ChevronDown, ChevronRight, Plus, Plane, Pencil } from 'lucide-react';
+import { useState } from 'react';
+import { Square, X, Sparkles, ChevronDown, ChevronRight, Plus, Plane, Pencil } from 'lucide-react';
 import ActionMenu from '../components/ActionMenu';
 import DailyNote from '../components/DailyNote';
+import TopPriorities from '../components/TopPriorities';
+import NotesWidget from '../components/NotesWidget';
 
 const WEEKDAYS = [
   { key: 'mon', label: 'M' },
@@ -51,22 +53,23 @@ function HabitRow({ habit, dragOver, onDragStart, onDragOver, onDragLeave, onDro
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <span className={`card-label ${habit.completed ? 'completed-text' : ''}`} style={{ flex: 1, minWidth: 0 }}>
+      <span className="card-label" style={{ flex: 1, minWidth: 0 }}>
         {habit.name}
         {target > 1 && <span className="count-text"> {count}/{target}</span>}
         {habit.cadence === 'week' && <span className="pill pill-muted" style={{ marginLeft: 8 }}>Weekly</span>}
         {habit.cadence === 'month' && <span className="pill pill-muted" style={{ marginLeft: 8 }}>Monthly</span>}
+        {habit.fromInterval && <span className="pill pill-muted" style={{ marginLeft: 8 }}>Recurring</span>}
         {habit.skipOnHoliday && <Plane size={11} style={{ marginLeft: 8, verticalAlign: -1, color: 'var(--text-muted)' }} aria-label="Paused on holiday" />}
       </span>
       <div className="day-row-actions" draggable={false} onDragStart={(e) => e.stopPropagation()}>
         {target <= 1 ? (
           <button
-            className={`check-btn ${habit.completed ? '' : 'unchecked'}`}
+            className="check-btn unchecked"
             draggable={false}
-            onClick={() => setHabitCount(habit.id, count >= 1 ? 0 : 1)}
-            aria-label={habit.completed ? 'Mark incomplete' : 'Mark complete'}
+            onClick={() => setHabitCount(habit.id, 1)}
+            aria-label="Mark complete"
           >
-            {habit.completed ? <Check size={16} /> : <Square size={16} />}
+            <Square size={16} />
           </button>
         ) : (
           <div className="count-marks" role="group" aria-label={`${count} of ${target} done`}>
@@ -92,13 +95,15 @@ export default function TodayView({
   groups, addGroup, toggleGroupCollapsed, deleteGroup,
   onBeginNewDay,
   weeklyHabits, setWeeklyHabits,
+  intervalHabits, setIntervalHabits,
   todos, toggleTodo, removeFromFocus, reorderFocusTodos, makeFocus, focusChore,
   todoSectionCollapsed, setTodoSectionCollapsed,
   isHolidayMode, toggleHolidayMode,
   chores, resetChore,
-  scratchpad, setScratchpad,
+  notes, setNotes, activeNoteId, setActiveNoteId,
   renameGroup, reorderGroups,
   dailyNoteText, setDailyNoteText, dailyNoteImage, setDailyNoteImage,
+  dailyPriorities, setDailyPriorities,
 }) {
   const [name, setName] = useState('');
   const [newTarget, setNewTarget] = useState(1);
@@ -123,24 +128,13 @@ export default function TodayView({
   const [wDays, setWDays] = useState([]);
   const [editingWeekly, setEditingWeekly] = useState(null);
   const [editWeeklyDraft, setEditWeeklyDraft] = useState({ name: '', days: [], skipOnHoliday: false });
-  const textareaRef = useRef(null);
-  const pendingCursorRef = useRef(null);
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
-    }
-    // Restore cursor position after a programmatic edit (bullet conversion,
-    // bullet continuation) — otherwise a controlled textarea resets the
-    // cursor to the very end every time its value is set from state.
-    if (pendingCursorRef.current !== null && textareaRef.current) {
-      const pos = pendingCursorRef.current;
-      textareaRef.current.selectionStart = pos;
-      textareaRef.current.selectionEnd = pos;
-      pendingCursorRef.current = null;
-    }
-  }, [scratchpad]);
+  const [intervalOpen, setIntervalOpen] = useState(false);
+  const [iName, setIName] = useState('');
+  const [iVal, setIVal] = useState(2);
+  const [iUnit, setIUnit] = useState('weeks');
+  const [editingInterval, setEditingInterval] = useState(null);
+  const [editIntervalDraft, setEditIntervalDraft] = useState({ name: '', intervalVal: 2, intervalUnit: 'weeks', skipOnHoliday: false });
 
   function submitHabit(e) {
     e.preventDefault();
@@ -230,49 +224,49 @@ export default function TodayView({
     setEditingWeekly(null);
   }
 
-  function handleScratchpadKeyDown(e) {
-    const el = e.target;
-    const val = el.value;
-    const start = el.selectionStart;
-
-    // Typing "* " or "- " at the start of a line converts it to a bullet.
-    if (e.key === ' ') {
-      const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-      const currentLine = val.substring(lineStart, start);
-      if (currentLine === '*' || currentLine === '-') {
-        e.preventDefault();
-        const newVal = val.substring(0, lineStart) + '\u2022 ' + val.substring(start);
-        pendingCursorRef.current = lineStart + 2;
-        setScratchpad(newVal);
-        return;
-      }
-    }
-
-    if (e.key === 'Enter') {
-      const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-      const currentLine = val.substring(lineStart, start);
-      const bulletMatch = currentLine.match(/^(\s*)(\u2022|-|\*)\s+(.*)/);
-      if (bulletMatch) {
-        e.preventDefault();
-        const content = bulletMatch[3].trim();
-        if (content === '') {
-          // Empty bullet + Enter exits the list instead of adding another one.
-          const newVal = val.substring(0, lineStart) + val.substring(start);
-          pendingCursorRef.current = lineStart;
-          setScratchpad(newVal);
-        } else {
-          const addition = '\n' + bulletMatch[1] + '\u2022 ';
-          const newVal = val.substring(0, start) + addition + val.substring(start);
-          pendingCursorRef.current = start + addition.length;
-          setScratchpad(newVal);
-        }
-      }
-    }
+  function intervalMsFor(ih) {
+    return ih.intervalVal * (ih.intervalUnit === 'months' ? 30 : 7) * 24 * 60 * 60 * 1000;
+  }
+  function intervalStatus(ih) {
+    const remaining = intervalMsFor(ih) - (Date.now() - ih.lastShown);
+    const daysLeft = Math.ceil(remaining / (24 * 60 * 60 * 1000));
+    return daysLeft <= 0 ? 'Ready' : `${daysLeft}d left`;
+  }
+  function addIntervalHabit(e) {
+    e.preventDefault();
+    if (!iName.trim() || !iVal) return;
+    setIntervalHabits([...intervalHabits, { id: Date.now(), name: iName.trim(), intervalVal: parseInt(iVal, 10) || 1, intervalUnit: iUnit, lastShown: Date.now(), skipOnHoliday: false }]);
+    setIName('');
+    setIVal(2);
+  }
+  function deleteIntervalHabit(id) {
+    setIntervalHabits(intervalHabits.filter((ih) => ih.id !== id));
+  }
+  function toggleIntervalSkipHoliday(id) {
+    setIntervalHabits(intervalHabits.map((ih) => (ih.id === id ? { ...ih, skipOnHoliday: !ih.skipOnHoliday } : ih)));
+  }
+  function openEditInterval(ih) {
+    setEditIntervalDraft({ name: ih.name, intervalVal: ih.intervalVal, intervalUnit: ih.intervalUnit, skipOnHoliday: !!ih.skipOnHoliday });
+    setEditingInterval(ih);
+  }
+  function submitEditInterval(e) {
+    e.preventDefault();
+    if (!editIntervalDraft.name.trim()) return;
+    setIntervalHabits(
+      intervalHabits.map((ih) =>
+        ih.id === editingInterval.id
+          ? { ...ih, name: editIntervalDraft.name.trim(), intervalVal: parseInt(editIntervalDraft.intervalVal, 10) || 1, intervalUnit: editIntervalDraft.intervalUnit, skipOnHoliday: editIntervalDraft.skipOnHoliday }
+          : ih
+      )
+    );
+    setEditingInterval(null);
   }
 
   const focusItems = todos.filter((t) => t.isFocus && !t.completed);
 
-  const visibleHabits = habits.filter((h) => !(isHolidayMode && h.skipOnHoliday));
+  // Hide a habit the moment it's completed — it reappears next time its
+  // cadence brings it back around, instead of sitting there struck-through.
+  const visibleHabits = habits.filter((h) => !h.completed && !(isHolidayMode && h.skipOnHoliday));
 
   const overdueChores = chores.filter((c) => isChoreOverdue(c) && !(isHolidayMode && c.skipOnHoliday));
   const urgentTodos = todos.filter((t) => !t.completed && t.dueDate).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 3);
@@ -308,6 +302,8 @@ export default function TodayView({
   return (
     <div className="view">
       <DailyNote text={dailyNoteText} setText={setDailyNoteText} image={dailyNoteImage} setImage={setDailyNoteImage} />
+
+      <TopPriorities priorities={dailyPriorities} setPriorities={setDailyPriorities} />
 
       <div className="section-row">
         <h2 className="section-title">Today</h2>
@@ -356,144 +352,6 @@ export default function TodayView({
           )}
         </div>
       )}
-
-      {groups.map((group) => {
-        const items = visibleHabits.filter((h) => h.groupId === group.id);
-        return (
-          <div
-            className={`collapsible ${groupDragOverId === group.id ? 'group-drag-over' : ''}`}
-            key={group.id}
-            draggable={editingGroupId !== group.id}
-            onDragStart={() => setGroupDragId(group.id)}
-            onDragOver={(e) => { e.preventDefault(); setGroupDragOverId(group.id); }}
-            onDragLeave={() => setGroupDragOverId(null)}
-            onDrop={() => {
-              if (groupDragId) {
-                reorderGroups(groupDragId, group.id);
-                setGroupDragId(null);
-                setGroupDragOverId(null);
-              } else if (dragId) {
-                reorderHabits(dragId, null, group.id);
-                setDragId(null);
-                setDragOverId(null);
-              }
-              setGroupDragOverId(null);
-            }}
-          >
-            <div className="collapsible-header group-header">
-              <span
-                style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, cursor: 'pointer' }}
-                onClick={() => toggleGroupCollapsed(group.id)}
-              >
-                {group.collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
-                {editingGroupId === group.id ? (
-                  <input
-                    type="text"
-                    className="group-name-input"
-                    value={groupEditName}
-                    onChange={(e) => setGroupEditName(e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    onBlur={() => commitEditGroup(group.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); commitEditGroup(group.id); }
-                      if (e.key === 'Escape') { e.preventDefault(); setEditingGroupId(null); }
-                    }}
-                    autoFocus
-                  />
-                ) : (
-                  <span>{group.name}</span>
-                )}
-                <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({items.length})</span>
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-                <span
-                  role="button"
-                  tabIndex={0}
-                  className="btn-ghost"
-                  style={{ fontSize: 11 }}
-                  onClick={(e) => { e.stopPropagation(); startEditGroup(group); }}
-                >
-                  Rename
-                </span>
-                <span
-                  role="button"
-                  tabIndex={0}
-                  className="btn-ghost btn-danger"
-                  style={{ fontSize: 11 }}
-                  onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}
-                >
-                  Remove group
-                </span>
-              </span>
-            </div>
-            {!group.collapsed && (
-              <div className="collapsible-body" style={{ padding: 0 }} {...groupContainerDropProps(group.id)}>
-                {items.length === 0 ? (
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 16px' }}>No habits in this group yet — drag one here.</p>
-                ) : (
-                  items.map((habit) => (
-                    <HabitRow
-                      key={habit.id}
-                      habit={habit}
-                      dragOver={dragOverId === habit.id}
-                      setHabitCount={setHabitCount}
-                      onEdit={() => openEdit(habit)}
-                      onDelete={() => deleteHabit(habit.id)}
-                      {...habitDragProps(habit)}
-                    />
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      <div className="day-list" {...groupContainerDropProps(null)}>
-        {groups.length > 0 && ungroupedHabits.length > 0 && (
-          <div style={{ padding: '8px 14px 0', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--text-muted)' }}>
-            Ungrouped
-          </div>
-        )}
-        {ungroupedHabits.map((habit) => (
-          <HabitRow
-            key={habit.id}
-            habit={habit}
-            dragOver={dragOverId === habit.id}
-            setHabitCount={setHabitCount}
-            onEdit={() => openEdit(habit)}
-            onDelete={() => deleteHabit(habit.id)}
-            {...habitDragProps(habit)}
-          />
-        ))}
-        {ungroupedHabits.length === 0 && groups.length === 0 && (
-          <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>No habits yet — add one below.</div>
-        )}
-      </div>
-
-      {addingGroup ? (
-        <form className="form-row" onSubmit={submitGroup} style={{ marginTop: -6 }}>
-          <input type="text" placeholder="Group name" value={groupName} onChange={(e) => setGroupName(e.target.value)} autoFocus />
-          <button type="submit" className="btn btn-primary">Add group</button>
-          <button type="button" className="btn" onClick={() => setAddingGroup(false)}>Cancel</button>
-        </form>
-      ) : (
-        <button className="btn" style={{ marginTop: -6, marginBottom: 20 }} onClick={() => setAddingGroup(true)}>
-          <Plus size={13} /> New group
-        </button>
-      )}
-
-      <div className="scratchpad-box">
-        <h4>Scratchpad</h4>
-        <textarea
-          ref={textareaRef}
-          className="scratchpad-textarea"
-          placeholder="Rough notes for today..."
-          value={scratchpad}
-          onChange={(e) => setScratchpad(e.target.value)}
-          onKeyDown={handleScratchpadKeyDown}
-        />
-      </div>
 
       {showBanner && (
         <div className="banner">
@@ -544,6 +402,134 @@ export default function TodayView({
             </div>
           ))}
         </div>
+      )}
+
+      <div className="day-list-outer">
+        {groups.map((group) => {
+          const items = visibleHabits.filter((h) => h.groupId === group.id);
+          return (
+            <div
+              className={`day-section ${groupDragOverId === group.id ? 'group-drag-over' : ''}`}
+              key={group.id}
+              draggable={editingGroupId !== group.id}
+              onDragStart={() => setGroupDragId(group.id)}
+              onDragOver={(e) => { e.preventDefault(); setGroupDragOverId(group.id); }}
+              onDragLeave={() => setGroupDragOverId(null)}
+              onDrop={() => {
+                if (groupDragId) {
+                  reorderGroups(groupDragId, group.id);
+                  setGroupDragId(null);
+                  setGroupDragOverId(null);
+                } else if (dragId) {
+                  reorderHabits(dragId, null, group.id);
+                  setDragId(null);
+                  setDragOverId(null);
+                }
+                setGroupDragOverId(null);
+              }}
+            >
+              <div className="day-section-header group-header">
+                <span
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, cursor: 'pointer' }}
+                  onClick={() => toggleGroupCollapsed(group.id)}
+                >
+                  {group.collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+                  {editingGroupId === group.id ? (
+                    <input
+                      type="text"
+                      className="group-name-input"
+                      value={groupEditName}
+                      onChange={(e) => setGroupEditName(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      onBlur={() => commitEditGroup(group.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); commitEditGroup(group.id); }
+                        if (e.key === 'Escape') { e.preventDefault(); setEditingGroupId(null); }
+                      }}
+                      autoFocus
+                    />
+                  ) : (
+                    <span>{group.name}</span>
+                  )}
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({items.length})</span>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="btn-ghost"
+                    style={{ fontSize: 11 }}
+                    onClick={(e) => { e.stopPropagation(); startEditGroup(group); }}
+                  >
+                    Rename
+                  </span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="btn-ghost btn-danger"
+                    style={{ fontSize: 11 }}
+                    onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}
+                  >
+                    Remove group
+                  </span>
+                </span>
+              </div>
+              {!group.collapsed && (
+                <div className="day-section-body" {...groupContainerDropProps(group.id)}>
+                  {items.length === 0 ? (
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 16px' }}>No habits in this group yet — drag one here.</p>
+                  ) : (
+                    items.map((habit) => (
+                      <HabitRow
+                        key={habit.id}
+                        habit={habit}
+                        dragOver={dragOverId === habit.id}
+                        setHabitCount={setHabitCount}
+                        onEdit={() => openEdit(habit)}
+                        onDelete={() => deleteHabit(habit.id)}
+                        {...habitDragProps(habit)}
+                      />
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div className="day-section" {...groupContainerDropProps(null)}>
+          {groups.length > 0 && ungroupedHabits.length > 0 && (
+            <div className="day-section-label">Ungrouped</div>
+          )}
+          <div className="day-section-body">
+            {ungroupedHabits.map((habit) => (
+              <HabitRow
+                key={habit.id}
+                habit={habit}
+                dragOver={dragOverId === habit.id}
+                setHabitCount={setHabitCount}
+                onEdit={() => openEdit(habit)}
+                onDelete={() => deleteHabit(habit.id)}
+                {...habitDragProps(habit)}
+              />
+            ))}
+            {ungroupedHabits.length === 0 && groups.length === 0 && (
+              <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>No habits yet — add one below.</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {addingGroup ? (
+        <form className="form-row" onSubmit={submitGroup} style={{ marginTop: -6 }}>
+          <input type="text" placeholder="Group name" value={groupName} onChange={(e) => setGroupName(e.target.value)} autoFocus />
+          <button type="submit" className="btn btn-primary">Add group</button>
+          <button type="button" className="btn" onClick={() => setAddingGroup(false)}>Cancel</button>
+        </form>
+      ) : (
+        <button className="btn" style={{ marginTop: -6, marginBottom: 20 }} onClick={() => setAddingGroup(true)}>
+          <Plus size={13} /> New group
+        </button>
       )}
 
       <form className="form-row" onSubmit={submitHabit}>
@@ -653,6 +639,66 @@ export default function TodayView({
           </div>
         )}
       </div>
+
+      <div className="collapsible">
+        <button className="collapsible-header" onClick={() => setIntervalOpen((o) => !o)}>
+          Recurring habits
+          <span className="chev">{intervalOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</span>
+        </button>
+        {intervalOpen && (
+          <div className="collapsible-body">
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
+              For things that come up every few weeks or months, like "every 2 weeks" or "every 3 months" — it shows up in the list above once due, then disappears again until it's due next.
+            </p>
+            <form onSubmit={addIntervalHabit} style={{ marginBottom: 14 }}>
+              <div className="form-row">
+                <input type="text" placeholder="Habit name" value={iName} onChange={(e) => setIName(e.target.value)} />
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>every</span>
+                <input type="number" min="1" value={iVal} onChange={(e) => setIVal(e.target.value)} style={{ width: 56 }} />
+                <select value={iUnit} onChange={(e) => setIUnit(e.target.value)}>
+                  <option value="weeks">Weeks</option>
+                  <option value="months">Months</option>
+                </select>
+                <button type="submit" className="btn btn-primary">Add</button>
+              </div>
+            </form>
+
+            {intervalHabits.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>No recurring habits yet.</p>
+            ) : (
+              [...intervalHabits]
+                .sort((a, b) => (intervalMsFor(a) - (Date.now() - a.lastShown)) - (intervalMsFor(b) - (Date.now() - b.lastShown)))
+                .map((ih) => (
+                  <div className="weekly-habit-row" key={ih.id}>
+                    <div className="weekly-habit-info">
+                      <span style={{ fontSize: 13 }}>{ih.name}</span>
+                      <span className="tag">every {ih.intervalVal} {ih.intervalUnit}</span>
+                      <span className={`chore-status ${intervalStatus(ih) === 'Ready' ? 'overdue' : 'ok'}`}>{intervalStatus(ih)}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      <button
+                        className="chore-remove"
+                        style={ih.skipOnHoliday ? { color: 'var(--navy)' } : undefined}
+                        onClick={() => toggleIntervalSkipHoliday(ih.id)}
+                        title={ih.skipOnHoliday ? 'Pauses while holiday mode is on — click to unpause' : 'Pause this habit during holiday mode'}
+                      >
+                        <Plane size={14} />
+                      </button>
+                      <button className="chore-remove" onClick={() => openEditInterval(ih)} aria-label="Edit">
+                        <Pencil size={13} />
+                      </button>
+                      <button className="chore-remove" onClick={() => deleteIntervalHabit(ih.id)} aria-label="Delete">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+            )}
+          </div>
+        )}
+      </div>
+
+      <NotesWidget notes={notes} setNotes={setNotes} activeNoteId={activeNoteId} setActiveNoteId={setActiveNoteId} />
 
       {editingHabit && (
         <div className="modal-backdrop" onClick={() => setEditingHabit(null)}>
@@ -765,6 +811,58 @@ export default function TodayView({
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn" onClick={() => setEditingWeekly(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingInterval && (
+        <div className="modal-backdrop" onClick={() => setEditingInterval(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Edit recurring habit</h2>
+            <form onSubmit={submitEditInterval}>
+              <div className="modal-row">
+                <label>Name</label>
+                <input
+                  type="text"
+                  value={editIntervalDraft.name}
+                  onChange={(e) => setEditIntervalDraft({ ...editIntervalDraft, name: e.target.value })}
+                  autoFocus
+                />
+              </div>
+              <div className="modal-row">
+                <label>Repeats every</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editIntervalDraft.intervalVal}
+                    onChange={(e) => setEditIntervalDraft({ ...editIntervalDraft, intervalVal: e.target.value })}
+                    style={{ width: 80 }}
+                  />
+                  <select
+                    value={editIntervalDraft.intervalUnit}
+                    onChange={(e) => setEditIntervalDraft({ ...editIntervalDraft, intervalUnit: e.target.value })}
+                  >
+                    <option value="weeks">Weeks</option>
+                    <option value="months">Months</option>
+                  </select>
+                </div>
+              </div>
+              <div className="modal-row">
+                <label className="toggle-pill" style={{ width: 'fit-content' }}>
+                  <input
+                    type="checkbox"
+                    checked={editIntervalDraft.skipOnHoliday}
+                    onChange={(e) => setEditIntervalDraft({ ...editIntervalDraft, skipOnHoliday: e.target.checked })}
+                  />
+                  <Plane size={12} /> Pause on holiday
+                </label>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn" onClick={() => setEditingInterval(null)}>Cancel</button>
                 <button type="submit" className="btn btn-primary">Save</button>
               </div>
             </form>
