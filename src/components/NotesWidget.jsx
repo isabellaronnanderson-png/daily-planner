@@ -110,7 +110,7 @@ export default function NotesWidget({ notes, setNotes, activeNoteId, setActiveNo
                 {note.title}
               </button>
             )}
-            {notes.length > 1 && note.id === activeNote.id && (
+            {notes.length > 1 && (
               <button className="notes-tab-close" onClick={() => deleteNote(note.id)} aria-label="Delete note">
                 <X size={11} />
               </button>

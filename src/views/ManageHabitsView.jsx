@@ -33,22 +33,21 @@ const EMPTY_DRAFT = {
   targetCount: 1,
   days: [],
   everyNth: 1,
-  keepUntilDone: false,
+  resetDay: 1,
   groupId: '',
   skipOnHoliday: false,
 };
 
 function regularBadges(habit) {
   const badges = [];
-  if (habit.cadence === 'week') badges.push('Weekly');
-  if (habit.cadence === 'month') badges.push('Monthly');
+  if (habit.cadence === 'week') badges.push(`Weekly · resets ${WEEKDAY_NAMES[habit.resetDay ?? 1]}`);
+  if (habit.cadence === 'month') badges.push(`Monthly · resets ${ordinal(habit.resetDay ?? 1)}`);
   if ((habit.targetCount || 1) > 1) badges.push(`${habit.targetCount}x`);
   return badges;
 }
 function daySpecificBadges(w) {
   const badges = [...dayBadges(w.days)];
   if ((w.everyNth || 1) > 1) badges.push(`every ${w.everyNth}`);
-  if (w.keepUntilDone) badges.push('Keep until done');
   return badges;
 }
 
@@ -80,7 +79,6 @@ export default function ManageHabitsView({
   habits, addHabit, editHabit, deleteHabit, reorderHabits,
   groups, addGroup, toggleGroupCollapsed, deleteGroup, renameGroup, reorderGroups,
   weeklyHabits, setWeeklyHabits,
-  weeklyResetDay, setWeeklyResetDay, monthlyResetDay, setMonthlyResetDay,
 }) {
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
@@ -106,7 +104,7 @@ export default function ManageHabitsView({
       targetCount: habit.targetCount || 1,
       days: [],
       everyNth: 1,
-      keepUntilDone: false,
+      resetDay: habit.resetDay ?? 1,
       groupId: habit.groupId || '',
       skipOnHoliday: !!habit.skipOnHoliday,
     });
@@ -119,7 +117,7 @@ export default function ManageHabitsView({
       targetCount: 1,
       days: [...w.days],
       everyNth: w.everyNth || 1,
-      keepUntilDone: !!w.keepUntilDone,
+      resetDay: 1,
       groupId: w.groupId || '',
       skipOnHoliday: !!w.skipOnHoliday,
     });
@@ -148,7 +146,7 @@ export default function ManageHabitsView({
         setWeeklyHabits(
           weeklyHabits.map((w) =>
             w.id === habitModal.id
-              ? { ...w, name: draft.name.trim(), days: draft.days, everyNth, keepUntilDone: draft.keepUntilDone, groupId: draft.groupId || null, skipOnHoliday: draft.skipOnHoliday }
+              ? { ...w, name: draft.name.trim(), days: draft.days, everyNth, groupId: draft.groupId || null, skipOnHoliday: draft.skipOnHoliday }
               : w
           )
         );
@@ -160,7 +158,6 @@ export default function ManageHabitsView({
             name: draft.name.trim(),
             days: draft.days,
             everyNth,
-            keepUntilDone: draft.keepUntilDone,
             groupId: draft.groupId || null,
             skipOnHoliday: draft.skipOnHoliday,
             occurrenceCount: 0,
@@ -169,10 +166,11 @@ export default function ManageHabitsView({
       }
     } else {
       const targetCount = parseInt(draft.targetCount, 10) || 1;
+      const resetDay = parseInt(draft.resetDay, 10) || 1;
       if (habitModal.mode === 'edit' && habitModal.type === 'regular') {
-        editHabit(habitModal.id, { name: draft.name, targetCount, groupId: draft.groupId || null, cadence: draft.repeats, skipOnHoliday: draft.skipOnHoliday });
+        editHabit(habitModal.id, { name: draft.name, targetCount, groupId: draft.groupId || null, cadence: draft.repeats, skipOnHoliday: draft.skipOnHoliday, resetDay });
       } else {
-        addHabit({ name: draft.name.trim(), targetCount, cadence: draft.repeats, groupId: draft.groupId || null, skipOnHoliday: draft.skipOnHoliday });
+        addHabit({ name: draft.name.trim(), targetCount, cadence: draft.repeats, groupId: draft.groupId || null, skipOnHoliday: draft.skipOnHoliday, resetDay });
       }
     }
     setHabitModal(null);
@@ -231,28 +229,6 @@ export default function ManageHabitsView({
       <div className="section-row">
         <h2 className="section-title">Manage habits</h2>
         <button className="btn btn-primary" onClick={openCreateModal}><Plus size={13} /> New habit</button>
-      </div>
-
-      <div className="collapsible" style={{ marginBottom: '1.5rem' }}>
-        <div className="collapsible-header" style={{ cursor: 'default' }}>Reset schedule</div>
-        <div className="collapsible-body">
-          <div className="modal-row" style={{ marginBottom: 10 }}>
-            <label>Weekly goals reset on</label>
-            <select value={weeklyResetDay} onChange={(e) => setWeeklyResetDay(parseInt(e.target.value, 10))}>
-              {WEEKDAY_NAMES.map((d, i) => (
-                <option key={i} value={i}>{d}</option>
-              ))}
-            </select>
-          </div>
-          <div className="modal-row" style={{ marginBottom: 0 }}>
-            <label>Monthly goals reset on</label>
-            <select value={monthlyResetDay} onChange={(e) => setMonthlyResetDay(parseInt(e.target.value, 10))}>
-              {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                <option key={d} value={d}>{ordinal(d)}</option>
-              ))}
-            </select>
-          </div>
-        </div>
       </div>
 
       <div className="day-list-outer">
@@ -437,21 +413,34 @@ export default function ManageHabitsView({
                       <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>occurrence(s) — e.g. 2 = every other selected day</span>
                     </div>
                   </div>
-                  <div className="modal-row">
-                    <label className="toggle-pill" style={{ width: 'fit-content' }}>
-                      <input type="checkbox" checked={draft.keepUntilDone} onChange={(e) => setDraft({ ...draft, keepUntilDone: e.target.checked })} />
-                      Keep until done
-                    </label>
-                    <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '4px 0 0' }}>
-                      Stays on your list until you check it off, or until its next scheduled day comes around — whichever is first. Otherwise it only appears on the day itself.
-                    </p>
-                  </div>
                 </>
               ) : (
-                <div className="modal-row">
-                  <label>{draft.repeats === 'day' ? 'Times per day' : `Times per ${draft.repeats}`}</label>
-                  <input type="number" min="1" value={draft.targetCount} onChange={(e) => setDraft({ ...draft, targetCount: e.target.value })} />
-                </div>
+                <>
+                  <div className="modal-row">
+                    <label>{draft.repeats === 'day' ? 'Times per day' : `Times per ${draft.repeats}`}</label>
+                    <input type="number" min="1" value={draft.targetCount} onChange={(e) => setDraft({ ...draft, targetCount: e.target.value })} />
+                  </div>
+                  {draft.repeats === 'week' && (
+                    <div className="modal-row">
+                      <label>Resets on</label>
+                      <select value={draft.resetDay} onChange={(e) => setDraft({ ...draft, resetDay: parseInt(e.target.value, 10) })}>
+                        {WEEKDAY_NAMES.map((d, i) => (
+                          <option key={i} value={i}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {draft.repeats === 'month' && (
+                    <div className="modal-row">
+                      <label>Resets on the</label>
+                      <select value={draft.resetDay} onChange={(e) => setDraft({ ...draft, resetDay: parseInt(e.target.value, 10) })}>
+                        {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                          <option key={d} value={d}>{ordinal(d)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </>
               )}
 
               <div className="modal-row">

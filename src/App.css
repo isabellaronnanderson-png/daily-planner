@@ -683,42 +683,46 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
 .notes-tab-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-bottom: 10px;
-  border-bottom: 1px solid var(--border);
+  gap: 8px;
+  margin-bottom: 14px;
   overflow-x: auto;
+  padding-bottom: 2px;
 }
 .notes-tab {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 2px 8px;
-  border-bottom: 2px solid transparent;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 14px;
+  background: var(--surface);
   flex-shrink: 0;
 }
+.notes-tab:hover {
+  background: var(--surface-hover);
+}
 .notes-tab.active {
-  border-bottom-color: var(--text);
+  background: var(--text);
 }
 .notes-tab-label {
   background: none;
   border: none;
   font-size: 12.5px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   padding: 0;
   white-space: nowrap;
 }
 .notes-tab.active .notes-tab-label {
-  color: var(--text);
+  color: #fff;
   font-weight: 500;
 }
 .notes-tab-input {
   border: none;
-  border-bottom: 1px solid var(--border-strong);
-  background: none;
+  background: var(--bg);
+  border-radius: 4px;
   font-size: 12.5px;
   color: var(--text);
-  padding: 0;
-  width: 80px;
+  padding: 2px 5px;
+  width: 90px;
   outline: none;
 }
 .notes-tab-close {
@@ -727,21 +731,33 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
   color: var(--text-muted);
   display: flex;
   padding: 0;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.notes-tab:hover .notes-tab-close {
+  opacity: 1;
+}
+.notes-tab.active .notes-tab-close {
+  color: rgba(255,255,255,0.75);
 }
 .notes-tab-close:hover {
-  color: var(--red);
+  color: var(--red) !important;
 }
 .notes-tab-add {
   background: none;
-  border: none;
+  border: 1px dashed var(--border-strong);
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
   color: var(--text-muted);
   display: flex;
   align-items: center;
-  padding: 0 4px 8px;
+  justify-content: center;
   flex-shrink: 0;
 }
 .notes-tab-add:hover {
   color: var(--text);
+  border-color: var(--text);
 }
 
 /* ===== Top priorities widget ===== */
@@ -780,6 +796,11 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
 }
 .priorities-input::placeholder {
   color: var(--text-muted);
+}
+.priorities-add-btn {
+  font-size: 12px;
+  padding: 8px 0 4px;
+  display: block;
 }
 
 /* ===== Unified habit groups list (notes-app style) ===== */

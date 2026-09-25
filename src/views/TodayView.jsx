@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Square, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
 import DailyNote from '../components/DailyNote';
 import TopPriorities from '../components/TopPriorities';
@@ -22,7 +21,6 @@ function TodayHabitRow({ habit, setHabitCount }) {
       <span className="card-label" style={{ flex: 1, minWidth: 0 }}>
         {habit.name}
         {target > 1 && <span className="count-text"> {count}/{target}</span>}
-        {habit.keepUntilDone && <span className="pill pill-muted" style={{ marginLeft: 8 }}>Keep until done</span>}
       </span>
       <div className="day-row-actions">
         {target <= 1 ? (
@@ -55,21 +53,14 @@ export default function TodayView({
   chores, resetChore,
   notes, setNotes, activeNoteId, setActiveNoteId,
   dailyNoteText, setDailyNoteText, dailyNoteImage, setDailyNoteImage,
-  dailyPriorities, setDailyPriorities,
+  addQuickFocusTodo,
 }) {
-  const [weeklyOpen, setWeeklyOpen] = useState(false);
-  const [monthlyOpen, setMonthlyOpen] = useState(false);
-
   const focusItems = todos.filter((t) => t.isFocus && !t.completed);
 
   // Hide a habit the moment it's completed — it reappears next time its
   // cadence brings it back around, instead of sitting there struck-through.
   const visibleHabits = habits.filter((h) => !h.completed && !(isHolidayMode && h.skipOnHoliday));
-  const dailyHabits = visibleHabits.filter((h) => h.cadence !== 'week' && h.cadence !== 'month');
-  const weeklyGoalHabits = visibleHabits.filter((h) => h.cadence === 'week');
-  const monthlyGoalHabits = visibleHabits.filter((h) => h.cadence === 'month');
-
-  const ungroupedDaily = dailyHabits.filter((h) => !h.groupId);
+  const ungroupedHabits = visibleHabits.filter((h) => !h.groupId);
 
   const overdueChores = chores.filter((c) => isChoreOverdue(c) && !(isHolidayMode && c.skipOnHoliday));
   const urgentTodos = todos.filter((t) => !t.completed && t.dueDate).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 3);
@@ -80,11 +71,10 @@ export default function TodayView({
       <DailyNote text={dailyNoteText} setText={setDailyNoteText} image={dailyNoteImage} setImage={setDailyNoteImage} />
 
       <TopPriorities
-        priorities={dailyPriorities}
-        setPriorities={setDailyPriorities}
         focusItems={focusItems}
         toggleTodo={toggleTodo}
         removeFromFocus={removeFromFocus}
+        addQuickFocusTodo={addQuickFocusTodo}
       />
 
       <div className="section-row">
@@ -151,7 +141,7 @@ export default function TodayView({
 
       <div className="day-list-outer">
         {groups.map((group) => {
-          const items = dailyHabits.filter((h) => h.groupId === group.id);
+          const items = visibleHabits.filter((h) => h.groupId === group.id);
           if (items.length === 0) return null;
           return (
             <div className="day-section" key={group.id}>
@@ -173,61 +163,23 @@ export default function TodayView({
           );
         })}
 
-        {ungroupedDaily.length > 0 && (
+        {ungroupedHabits.length > 0 && (
           <div className="day-section">
-            {groups.some((g) => dailyHabits.some((h) => h.groupId === g.id)) && (
+            {groups.some((g) => visibleHabits.some((h) => h.groupId === g.id)) && (
               <div className="day-section-label">Ungrouped</div>
             )}
             <div className="day-section-body">
-              {ungroupedDaily.map((habit) => (
+              {ungroupedHabits.map((habit) => (
                 <TodayHabitRow key={habit.id} habit={habit} setHabitCount={setHabitCount} />
               ))}
             </div>
           </div>
         )}
 
-        {dailyHabits.length === 0 && (
+        {visibleHabits.length === 0 && (
           <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>Nothing left for today — nice work.</div>
         )}
       </div>
-
-      {weeklyGoalHabits.length > 0 && (
-        <div className="collapsible">
-          <button className="collapsible-header" onClick={() => setWeeklyOpen((o) => !o)}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {weeklyOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-              Weekly goals
-              <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({weeklyGoalHabits.length})</span>
-            </span>
-          </button>
-          {weeklyOpen && (
-            <div className="collapsible-body" style={{ padding: 0 }}>
-              {weeklyGoalHabits.map((habit) => (
-                <TodayHabitRow key={habit.id} habit={habit} setHabitCount={setHabitCount} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {monthlyGoalHabits.length > 0 && (
-        <div className="collapsible">
-          <button className="collapsible-header" onClick={() => setMonthlyOpen((o) => !o)}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {monthlyOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-              Monthly goals
-              <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({monthlyGoalHabits.length})</span>
-            </span>
-          </button>
-          {monthlyOpen && (
-            <div className="collapsible-body" style={{ padding: 0 }}>
-              {monthlyGoalHabits.map((habit) => (
-                <TodayHabitRow key={habit.id} habit={habit} setHabitCount={setHabitCount} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       <NotesWidget notes={notes} setNotes={setNotes} activeNoteId={activeNoteId} setActiveNoteId={setActiveNoteId} />
     </div>

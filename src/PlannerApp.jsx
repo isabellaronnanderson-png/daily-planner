@@ -71,10 +71,6 @@ export default function PlannerApp({ user, signOut }) {
   const [coverImage, setCoverImage] = useLocalStorage('planner_cover_image', null);
   const [coverPosition, setCoverPosition] = useLocalStorage('planner_cover_position', { x: 50, y: 50 });
   const [currentDate, setCurrentDate] = useLocalStorage('planner_current_date', new Date().toISOString());
-  const [weeklyResetDay, setWeeklyResetDay] = useLocalStorage('planner_weekly_reset_day', 1); // Monday
-  const [monthlyResetDay, setMonthlyResetDay] = useLocalStorage('planner_monthly_reset_day', 1); // 1st
-  const [weekKey, setWeekKey] = useLocalStorage('planner_week_key', weekKeyFor(new Date().toISOString(), 1));
-  const [monthKey, setMonthKey] = useLocalStorage('planner_month_key', monthKeyFor(new Date().toISOString(), 1));
   const [title, setTitle] = useLocalStorage('planner_title', "isabella's planner");
 
   const [habits, setHabits] = useLocalStorage('planner_habits', DEFAULT_HABITS);
@@ -93,11 +89,6 @@ export default function PlannerApp({ user, signOut }) {
   const [activeNoteId, setActiveNoteId] = useLocalStorage('planner_active_note_id', null);
   const [dailyNoteText, setDailyNoteText] = useLocalStorage('planner_daily_note_text', '');
   const [dailyNoteImage, setDailyNoteImage] = useLocalStorage('planner_daily_note_image', null);
-  const [dailyPriorities, setDailyPriorities] = useLocalStorage('planner_daily_priorities', [
-    { text: '', done: false },
-    { text: '', done: false },
-    { text: '', done: false },
-  ]);
 
   const [chores, setChores] = useLocalStorage('planner_chores', DEFAULT_CHORES);
 
@@ -106,10 +97,10 @@ export default function PlannerApp({ user, signOut }) {
   // Every piece of the app's data, collected into one object — this is what
   // gets synced to Supabase and what a backup file contains.
   const appState = {
-    tabOrder, coverImage, coverPosition, currentDate, weekKey, monthKey, weeklyResetDay, monthlyResetDay, title,
+    tabOrder, coverImage, coverPosition, currentDate, title,
     habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, weeklyHabits, groups,
     todoSectionCollapsed, todos, isHolidayMode, holidayStartedAt,
-    scratchpad, notes, activeNoteId, dailyNoteText, dailyNoteImage, dailyPriorities, chores,
+    scratchpad, notes, activeNoteId, dailyNoteText, dailyNoteImage, chores,
   };
 
   // Applies a full state blob (from the cloud or a restored backup file) —
@@ -121,10 +112,6 @@ export default function PlannerApp({ user, signOut }) {
     if (data.coverImage !== undefined) setCoverImage(data.coverImage);
     if (data.coverPosition !== undefined) setCoverPosition(data.coverPosition);
     if (data.currentDate !== undefined) setCurrentDate(data.currentDate);
-    if (data.weekKey !== undefined) setWeekKey(data.weekKey);
-    if (data.monthKey !== undefined) setMonthKey(data.monthKey);
-    if (data.weeklyResetDay !== undefined) setWeeklyResetDay(data.weeklyResetDay);
-    if (data.monthlyResetDay !== undefined) setMonthlyResetDay(data.monthlyResetDay);
     if (data.title !== undefined) setTitle(data.title);
     if (data.habits !== undefined) setHabits(data.habits);
     if (data.habitHistory !== undefined) setHabitHistory(data.habitHistory);
@@ -141,7 +128,6 @@ export default function PlannerApp({ user, signOut }) {
     if (data.activeNoteId !== undefined) setActiveNoteId(data.activeNoteId);
     if (data.dailyNoteText !== undefined) setDailyNoteText(data.dailyNoteText);
     if (data.dailyNoteImage !== undefined) setDailyNoteImage(data.dailyNoteImage);
-    if (data.dailyPriorities !== undefined) setDailyPriorities(data.dailyPriorities);
     if (data.chores !== undefined) setChores(data.chores);
   }
 
@@ -306,48 +292,27 @@ export default function PlannerApp({ user, signOut }) {
 
   function beginNewDay() {
     const closingDateKey = currentDate.split('T')[0];
-
-    const newWeekKey = weekKeyFor(new Date().toISOString(), weeklyResetDay);
-    const isNewWeek = newWeekKey !== weekKey;
-    const newMonthKey = monthKeyFor(new Date().toISOString(), monthlyResetDay);
-    const isNewMonth = newMonthKey !== monthKey;
+    const nowIso = new Date().toISOString();
 
     // Daily habits are logged every day. Weekly/monthly goals only get a
-    // history entry on the day their cycle actually closes, so consistency
-    // reflects "how often the whole week/month got done" rather than
-    // punishing every day it wasn't finished yet. Each cadence gets its own
-    // history stream so weekly/monthly goals can retain a meaningful number
-    // of cycles (12 weeks, 12 months) without bloating daily history.
+    // history entry on the day THEIR OWN cycle closes (each can have its own
+    // reset day — e.g. journaling resets Sundays, laundry resets Tuesdays),
+    // so consistency reflects "how often the whole cycle got done" rather
+    // than punishing every day it wasn't finished yet.
     const toSnapshotItem = (h) => ({ name: h.name, completed: h.completed, count: h.count || 0, target: h.targetCount || 1 });
     const notPaused = (h) => !(isHolidayMode && h.skipOnHoliday);
 
     const dailySnapshot = habits.filter((h) => notPaused(h) && h.cadence !== 'week' && h.cadence !== 'month' && !h.fromWeekly).map(toSnapshotItem);
     setHabitHistory([{ date: closingDateKey, snapshot: dailySnapshot }, ...habitHistory].slice(0, 14));
 
-    if (isNewWeek) {
-      const weeklySnapshot = habits.filter((h) => notPaused(h) && h.cadence === 'week').map(toSnapshotItem);
-      if (weeklySnapshot.length > 0) {
-        setWeeklyGoalHistory([{ date: closingDateKey, snapshot: weeklySnapshot }, ...weeklyGoalHistory].slice(0, 12));
-      }
-    }
-    if (isNewMonth) {
-      const monthlySnapshot = habits.filter((h) => notPaused(h) && h.cadence === 'month').map(toSnapshotItem);
-      if (monthlySnapshot.length > 0) {
-        setMonthlyGoalHistory([{ date: closingDateKey, snapshot: monthlySnapshot }, ...monthlyGoalHistory].slice(0, 12));
-      }
-    }
+    const weeklyClosing = [];
+    const monthlyClosing = [];
 
-    // Day-specific habits: each has its own weekday(s), an optional "every
-    // Nth occurrence" (e.g. every 2nd Thursday), and an optional "keep until
-    // done" flag. On a day that matches, we bump its occurrence counter and
-    // — if this occurrence is the trigger — spawn a fresh instance,
-    // replacing whatever was there before (so it "renews" rather than
-    // building up). On non-matching days, a "keep until done" instance that's
-    // still incomplete just carries over untouched; a normal one is dropped.
+    // Day-specific habits: each has its own weekday(s) and an optional
+    // "every Nth occurrence" (e.g. every 2nd Thursday). On a matching day we
+    // bump its occurrence counter and, if this occurrence is the trigger,
+    // spawn a fresh instance — it simply doesn't appear on non-matching days.
     const todaysWeekday = WEEKDAY_KEYS[new Date().getDay()];
-    const oldWeeklyInstances = habits.filter((h) => h.fromWeekly);
-    const survivingWeeklyInstances = oldWeeklyInstances.filter((h) => h.keepUntilDone && !h.completed);
-
     const nowMs = Date.now();
     const freshlyTriggered = [];
     const nextWeeklyHabits = weeklyHabits.map((w) => {
@@ -368,7 +333,6 @@ export default function PlannerApp({ user, signOut }) {
           groupId: w.groupId || null,
           fromWeekly: true,
           weeklyHabitId: w.id,
-          keepUntilDone: !!w.keepUntilDone,
           skipOnHoliday: !!w.skipOnHoliday,
         });
       }
@@ -376,29 +340,39 @@ export default function PlannerApp({ user, signOut }) {
     });
     setWeeklyHabits(nextWeeklyHabits);
 
-    // A freshly-triggered occurrence replaces any carried-over instance for
-    // the same habit, so it renews instead of duplicating.
-    const freshIds = new Set(freshlyTriggered.map((h) => h.weeklyHabitId));
-    const carriedWeeklyInstances = survivingWeeklyInstances.filter((h) => !freshIds.has(h.weeklyHabitId));
-
     const baseHabits = habits
       .filter((h) => !h.fromWeekly)
       .map((h) => {
         if (h.cadence === 'week') {
-          // Carry over untouched until a new week begins.
-          return isNewWeek ? { ...h, completed: false, count: 0 } : h;
+          const resetDay = h.resetDay ?? 1;
+          const currentKey = weekKeyFor(nowIso, resetDay);
+          if (h.cycleKey !== currentKey) {
+            weeklyClosing.push(toSnapshotItem(h));
+            return { ...h, completed: false, count: 0, cycleKey: currentKey };
+          }
+          return h; // same cycle — carry over untouched
         }
         if (h.cadence === 'month') {
-          // Carry over untouched until a new calendar month begins.
-          return isNewMonth ? { ...h, completed: false, count: 0 } : h;
+          const resetDay = h.resetDay ?? 1;
+          const currentKey = monthKeyFor(nowIso, resetDay);
+          if (h.cycleKey !== currentKey) {
+            monthlyClosing.push(toSnapshotItem(h));
+            return { ...h, completed: false, count: 0, cycleKey: currentKey };
+          }
+          return h;
         }
         return { ...h, completed: false, count: 0 };
       });
-    setHabits([...baseHabits, ...carriedWeeklyInstances, ...freshlyTriggered]);
+
+    if (weeklyClosing.length > 0) {
+      setWeeklyGoalHistory([{ date: closingDateKey, snapshot: weeklyClosing }, ...weeklyGoalHistory].slice(0, 12));
+    }
+    if (monthlyClosing.length > 0) {
+      setMonthlyGoalHistory([{ date: closingDateKey, snapshot: monthlyClosing }, ...monthlyGoalHistory].slice(0, 12));
+    }
+
+    setHabits([...baseHabits, ...freshlyTriggered]);
     setCurrentDate(new Date().toISOString());
-    if (isNewWeek) setWeekKey(newWeekKey);
-    if (isNewMonth) setMonthKey(newMonthKey);
-    setDailyPriorities([{ text: '', done: false }, { text: '', done: false }, { text: '', done: false }]);
 
     let nextTodos = todos.map((t) => (t.isFocus && t.completed ? { ...t, isFocus: false } : t));
     if (isHolidayMode) {
@@ -414,8 +388,13 @@ export default function PlannerApp({ user, signOut }) {
   }
 
   // ---- Habit actions ----
-  function addHabit({ name, targetCount = 1, groupId = null, cadence = 'day', skipOnHoliday = false }) {
-    setHabits([...habits, { id: 'h_' + Date.now(), name, completed: false, count: 0, targetCount: Math.max(1, targetCount), groupId: groupId || null, cadence, skipOnHoliday }]);
+  function addHabit({ name, targetCount = 1, groupId = null, cadence = 'day', skipOnHoliday = false, resetDay = null }) {
+    const effectiveResetDay = resetDay ?? 1;
+    const cycleKey =
+      cadence === 'week' ? weekKeyFor(new Date().toISOString(), effectiveResetDay)
+      : cadence === 'month' ? monthKeyFor(new Date().toISOString(), effectiveResetDay)
+      : undefined;
+    setHabits([...habits, { id: 'h_' + Date.now(), name, completed: false, count: 0, targetCount: Math.max(1, targetCount), groupId: groupId || null, cadence, skipOnHoliday, resetDay: effectiveResetDay, cycleKey }]);
   }
 
   // Click on the Nth mark: if it's already at that count, step back to just
@@ -437,10 +416,20 @@ export default function PlannerApp({ user, signOut }) {
     const trimmedName = (updates.name || '').trim();
     if (!trimmedName) return;
     const nextTarget = Math.max(1, updates.targetCount || 1);
+    const nextCadence = updates.cadence || 'day';
+    const nextResetDay = updates.resetDay ?? 1;
+    // Recompute the cycle key whenever the cadence or reset day changes, so
+    // switching to "resets on Sunday" doesn't immediately look like a stale
+    // cycle and force an unwanted reset.
+    const cadenceOrResetChanged = nextCadence !== habit.cadence || nextResetDay !== (habit.resetDay ?? 1);
+    const cycleKey =
+      nextCadence === 'week' ? (cadenceOrResetChanged ? weekKeyFor(new Date().toISOString(), nextResetDay) : habit.cycleKey)
+      : nextCadence === 'month' ? (cadenceOrResetChanged ? monthKeyFor(new Date().toISOString(), nextResetDay) : habit.cycleKey)
+      : undefined;
     setHabits(
       habits.map((h) =>
         h.id === id
-          ? { ...h, name: trimmedName, targetCount: nextTarget, count: Math.min(h.count || 0, nextTarget), groupId: updates.groupId || null, cadence: updates.cadence || 'day', skipOnHoliday: !!updates.skipOnHoliday }
+          ? { ...h, name: trimmedName, targetCount: nextTarget, count: Math.min(h.count || 0, nextTarget), groupId: updates.groupId || null, cadence: nextCadence, skipOnHoliday: !!updates.skipOnHoliday, resetDay: nextResetDay, cycleKey }
           : h
       )
     );
@@ -573,6 +562,27 @@ export default function PlannerApp({ user, signOut }) {
     setTodos((prev) => prev.map((t) => (t.id === id && t.name.trim() ? { ...t, isFocus: true } : t)));
   }
 
+  // Creates a brand-new task, already focused — used by the "If nothing else
+  // today" box's blank slots so typing directly there adds a real to-do.
+  function addQuickFocusTodo(name) {
+    if (!name.trim()) return;
+    setTodos((prev) => [
+      ...prev,
+      {
+        id: 't_' + Date.now() + Math.random().toString(36).slice(2, 6),
+        name: name.trim(),
+        dueDate: '',
+        isFocus: true,
+        completed: false,
+        completedAt: null,
+        skipOnHoliday: false,
+        weekendOnly: false,
+        isWork: false,
+        longTerm: false,
+      },
+    ]);
+  }
+
   // Atomically find-or-create a todo for a chore, then focus it — avoids the
   // stale-state bug where creating and focusing in two steps could drop the item.
   function focusChore(chore) {
@@ -657,8 +667,7 @@ export default function PlannerApp({ user, signOut }) {
           setDailyNoteText={setDailyNoteText}
           dailyNoteImage={dailyNoteImage}
           setDailyNoteImage={setDailyNoteImage}
-          dailyPriorities={dailyPriorities}
-          setDailyPriorities={setDailyPriorities}
+          addQuickFocusTodo={addQuickFocusTodo}
         />
       )}
       {activeTab === 'manage' && (
@@ -676,10 +685,6 @@ export default function PlannerApp({ user, signOut }) {
           reorderGroups={reorderGroups}
           weeklyHabits={weeklyHabits}
           setWeeklyHabits={setWeeklyHabits}
-          weeklyResetDay={weeklyResetDay}
-          setWeeklyResetDay={setWeeklyResetDay}
-          monthlyResetDay={monthlyResetDay}
-          setMonthlyResetDay={setMonthlyResetDay}
         />
       )}
       {activeTab === 'todo' && (

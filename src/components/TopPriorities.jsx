@@ -1,37 +1,29 @@
-import { Check, Square } from 'lucide-react';
+import { useState } from 'react';
+import { Square } from 'lucide-react';
 
-export default function TopPriorities({ priorities, setPriorities, focusItems, toggleTodo, removeFromFocus }) {
-  function updateText(i, text) {
-    setPriorities(priorities.map((p, idx) => (idx === i ? { ...p, text } : p)));
-  }
-  function toggleDone(i) {
-    setPriorities(priorities.map((p, idx) => (idx === i ? { ...p, done: !p.done } : p)));
+export default function TopPriorities({ focusItems, toggleTodo, removeFromFocus, addQuickFocusTodo }) {
+  const [extraSlots, setExtraSlots] = useState(0);
+  const [blankTexts, setBlankTexts] = useState({});
+
+  const neededBlanks = Math.max(0, 3 - focusItems.length) + extraSlots;
+
+  function commitBlank(index) {
+    const text = (blankTexts[index] || '').trim();
+    if (!text) return;
+    addQuickFocusTodo(text);
+    setBlankTexts((prev) => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
+    if (extraSlots > 0) setExtraSlots((n) => Math.max(0, n - 1));
   }
 
   return (
     <div className="priorities-box">
       <h4 className="priorities-title">If nothing else today…</h4>
-      {priorities.map((p, i) => (
-        <div className="priorities-row" key={i}>
-          <button
-            className={`check-btn ${p.done ? '' : 'unchecked'}`}
-            onClick={() => toggleDone(i)}
-            aria-label={p.done ? 'Mark incomplete' : 'Mark complete'}
-          >
-            {p.done ? <Check size={17} /> : <Square size={17} />}
-          </button>
-          <input
-            type="text"
-            className="priorities-input"
-            placeholder={`Priority ${i + 1}`}
-            value={p.text}
-            onChange={(e) => updateText(i, e.target.value)}
-            style={p.done ? { textDecoration: 'line-through', opacity: 0.5 } : undefined}
-          />
-        </div>
-      ))}
 
-      {focusItems && focusItems.length > 0 && focusItems.map((todo) => (
+      {focusItems.map((todo) => (
         <div className="priorities-row" key={todo.id}>
           <button className="check-btn unchecked" onClick={() => toggleTodo(todo.id)} aria-label="Mark done">
             <Square size={17} />
@@ -41,6 +33,27 @@ export default function TopPriorities({ priorities, setPriorities, focusItems, t
           <button className="btn-ghost btn-danger" style={{ fontSize: 11 }} onClick={() => removeFromFocus(todo.id)}>Remove</button>
         </div>
       ))}
+
+      {Array.from({ length: neededBlanks }).map((_, i) => (
+        <div className="priorities-row" key={'blank_' + i}>
+          <Square size={17} style={{ color: 'var(--border-strong)', flexShrink: 0 }} />
+          <input
+            type="text"
+            className="priorities-input"
+            placeholder="Add a priority…"
+            value={blankTexts[i] || ''}
+            onChange={(e) => setBlankTexts((prev) => ({ ...prev, [i]: e.target.value }))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); commitBlank(i); }
+            }}
+            onBlur={() => commitBlank(i)}
+          />
+        </div>
+      ))}
+
+      <button className="btn-ghost priorities-add-btn" onClick={() => setExtraSlots((n) => n + 1)}>
+        + Add priority
+      </button>
     </div>
   );
 }
