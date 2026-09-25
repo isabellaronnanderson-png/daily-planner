@@ -80,7 +80,7 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
         {todo.isFocus ? (
           <button className="btn-ghost btn-danger" onClick={() => removeFromFocus(todo.id)}>Remove from Today</button>
         ) : (
-          <button className="btn btn-sm" onClick={() => makeFocus(todo.id)}><Sparkles size={12} /> Focus</button>
+          <IconToggle active={false} onClick={() => makeFocus(todo.id)} icon={Sparkles} label="Pull into Today" activeColor="var(--navy)" />
         )}
         <button className="chore-remove" onClick={() => deleteTodo(todo.id)} aria-label="Delete">
           <X size={15} />

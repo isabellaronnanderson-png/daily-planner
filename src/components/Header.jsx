@@ -5,6 +5,7 @@ import BackupMenu from './BackupMenu';
 
 export const TAB_META = {
   habits: 'Today',
+  manage: 'Manage',
   todo: 'To-do',
   chores: 'Chores',
   insights: 'Insights',
