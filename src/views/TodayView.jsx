@@ -2,6 +2,7 @@ import { Square, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
 import DailyNote from '../components/DailyNote';
 import TopPriorities from '../components/TopPriorities';
 import NotesWidget from '../components/NotesWidget';
+import { localDateKey, monthKeyOf, officeCountForMonth } from '../lib/officeDays';
 
 function isChoreOverdue(chore) {
   const totalGoalMs = chore.freqVal * (chore.freqUnit === 'weeks' ? 7 : chore.freqUnit === 'months' ? 30 : 1) * 24 * 60 * 60 * 1000;
@@ -53,8 +54,12 @@ export default function TodayView({
   chores, resetChore,
   notes, setNotes, activeNoteId, setActiveNoteId,
   dailyNoteText, setDailyNoteText, dailyNoteImage, setDailyNoteImage,
-  addQuickFocusTodo,
+  priorityLines, setPriorityLines,
+  officeDays, toggleOfficeDay, currentDate,
 }) {
+  const inOfficeToday = officeDays.includes(localDateKey(currentDate));
+  const officeCount = officeCountForMonth(officeDays, monthKeyOf(currentDate));
+
   const focusItems = todos.filter((t) => t.isFocus && !t.completed);
 
   // Hide a habit the moment it's completed — it reappears next time its
@@ -74,12 +79,17 @@ export default function TodayView({
         focusItems={focusItems}
         toggleTodo={toggleTodo}
         removeFromFocus={removeFromFocus}
-        addQuickFocusTodo={addQuickFocusTodo}
+        priorityLines={priorityLines}
+        setPriorityLines={setPriorityLines}
       />
 
       <div className="section-row">
         <h2 className="section-title">Today</h2>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <label className="toggle-pill">
+            <input type="checkbox" checked={inOfficeToday} onChange={toggleOfficeDay} />
+            In office · {officeCount}
+          </label>
           <label className="toggle-pill">
             <input type="checkbox" checked={isHolidayMode} onChange={toggleHolidayMode} />
             Holiday

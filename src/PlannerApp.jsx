@@ -7,6 +7,7 @@ import ManageHabitsView from './views/ManageHabitsView';
 import TodoView from './views/TodoView';
 import ChoresView from './views/ChoresView';
 import InsightsView from './views/InsightsView';
+import { localDateKey, monthKeyOf } from './lib/officeDays';
 import './App.css';
 
 const DEFAULT_TAB_ORDER = ['habits', 'manage', 'todo', 'chores', 'insights'];
@@ -91,6 +92,8 @@ export default function PlannerApp({ user, signOut }) {
   const [dailyNoteImage, setDailyNoteImage] = useLocalStorage('planner_daily_note_image', null);
 
   const [chores, setChores] = useLocalStorage('planner_chores', DEFAULT_CHORES);
+  const [officeDays, setOfficeDays] = useLocalStorage('planner_office_days', []);
+  const [priorityLines, setPriorityLines] = useLocalStorage('planner_priority_lines', []);
 
   const safeTabOrder = [...tabOrder, ...DEFAULT_TAB_ORDER.filter((k) => !tabOrder.includes(k))].filter((k) => k !== 'weekend' && k !== 'schedule');
 
@@ -100,7 +103,7 @@ export default function PlannerApp({ user, signOut }) {
     tabOrder, coverImage, coverPosition, currentDate, title,
     habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, weeklyHabits, groups,
     todoSectionCollapsed, todos, isHolidayMode, holidayStartedAt,
-    scratchpad, notes, activeNoteId, dailyNoteText, dailyNoteImage, chores,
+    scratchpad, notes, activeNoteId, dailyNoteText, dailyNoteImage, chores, officeDays, priorityLines,
   };
 
   // Applies a full state blob (from the cloud or a restored backup file) —
@@ -129,6 +132,8 @@ export default function PlannerApp({ user, signOut }) {
     if (data.dailyNoteText !== undefined) setDailyNoteText(data.dailyNoteText);
     if (data.dailyNoteImage !== undefined) setDailyNoteImage(data.dailyNoteImage);
     if (data.chores !== undefined) setChores(data.chores);
+    if (data.officeDays !== undefined) setOfficeDays(data.officeDays);
+    if (data.priorityLines !== undefined) setPriorityLines(data.priorityLines);
   }
 
   const { status: syncStatus, errorMessage: syncError } = useCloudSync(user, appState, applyFullState);
@@ -382,6 +387,11 @@ export default function PlannerApp({ user, signOut }) {
 
     setHabits([...baseHabits, ...freshlyTriggered]);
     setCurrentDate(new Date().toISOString());
+    // Freeform priority lines: ticked-off ones clear with the day, unfinished
+    // ones carry over. Office days only matter for the current month.
+    setPriorityLines((prev) => prev.filter((l) => !l.done));
+    const thisMonth = monthKeyOf(new Date().toISOString());
+    setOfficeDays((prev) => prev.filter((d) => d.startsWith(thisMonth)));
 
     let nextTodos = todos.map((t) => (t.isFocus && t.completed ? { ...t, isFocus: false } : t));
     if (isHolidayMode) {
@@ -556,6 +566,13 @@ export default function PlannerApp({ user, signOut }) {
   }
 
   // ---- Todo actions (lifted so both Today and To-do tabs share one source of truth) ----
+  // Marks/unmarks the app's current day (the one that advances on "New day")
+  // as an office day.
+  function toggleOfficeDay() {
+    const key = localDateKey(currentDate);
+    setOfficeDays((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
+
   function toggleTodo(id) {
     setTodos((prev) =>
       prev.map((t) => {
@@ -593,26 +610,6 @@ export default function PlannerApp({ user, signOut }) {
     setTodos((prev) => prev.map((t) => (t.id === id && t.name.trim() ? { ...t, isFocus: true } : t)));
   }
 
-  // Creates a brand-new task, already focused — used by the "If nothing else
-  // today" box's blank slots so typing directly there adds a real to-do.
-  function addQuickFocusTodo(name) {
-    if (!name.trim()) return;
-    setTodos((prev) => [
-      ...prev,
-      {
-        id: 't_' + Date.now() + Math.random().toString(36).slice(2, 6),
-        name: name.trim(),
-        dueDate: '',
-        isFocus: true,
-        completed: false,
-        completedAt: null,
-        skipOnHoliday: false,
-        weekendOnly: false,
-        isWork: false,
-        longTerm: false,
-      },
-    ]);
-  }
 
   // Atomically find-or-create a todo for a chore, then focus it — avoids the
   // stale-state bug where creating and focusing in two steps could drop the item.
@@ -699,7 +696,11 @@ export default function PlannerApp({ user, signOut }) {
           setDailyNoteText={setDailyNoteText}
           dailyNoteImage={dailyNoteImage}
           setDailyNoteImage={setDailyNoteImage}
-          addQuickFocusTodo={addQuickFocusTodo}
+          officeDays={officeDays}
+          toggleOfficeDay={toggleOfficeDay}
+          currentDate={currentDate}
+          priorityLines={priorityLines}
+          setPriorityLines={setPriorityLines}
         />
       )}
       {activeTab === 'manage' && (
@@ -748,6 +749,8 @@ export default function PlannerApp({ user, signOut }) {
           todos={todos}
           groups={groups}
           weeklyHabits={weeklyHabits}
+          officeDays={officeDays}
+          currentDate={currentDate}
         />
       )}
     </div>

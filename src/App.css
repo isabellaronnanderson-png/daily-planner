@@ -1605,3 +1605,21 @@ input.todo-inline-input {
     border-radius: 0;
   }
 }
+
+/* ===== Office days (Insights) ===== */
+.office-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 8px;
+}
+.office-stat-number {
+  font-family: var(--font-display);
+  font-size: 38px;
+  line-height: 1;
+  color: var(--text);
+}
+.office-stat-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}

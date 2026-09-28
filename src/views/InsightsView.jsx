@@ -1,4 +1,9 @@
-export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, groups, weeklyHabits }) {
+import { monthKeyOf, officeCountForMonth, formatMonthKey } from '../lib/officeDays';
+
+export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, groups, weeklyHabits, officeDays = [], currentDate }) {
+  const thisMonthKey = monthKeyOf(currentDate || new Date().toISOString());
+  const officeThisMonth = officeCountForMonth(officeDays, thisMonthKey);
+
   const stats = {};
   habits.forEach((h) => { stats[h.name] = { ticked: 0, possible: 0 }; });
   [...habitHistory, ...(weeklyGoalHistory || []), ...(monthlyGoalHistory || [])].forEach((entry) => {
@@ -75,6 +80,16 @@ export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, 
       <p style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -8, marginBottom: 20 }}>
         A look back at your patterns — check in whenever you want, no pressure to watch it daily.
       </p>
+
+      <div className="history-box" style={{ marginBottom: '1.5rem' }}>
+        <div className="eyebrow" style={{ marginBottom: 0 }}>Days in the office</div>
+        <div className="office-stat">
+          <span className="office-stat-number">{officeThisMonth}</span>
+          <span className="office-stat-label">
+            {officeThisMonth === 1 ? 'day' : 'days'} so far in {formatMonthKey(thisMonthKey)}
+          </span>
+        </div>
+      </div>
 
       <div className="history-box" style={{ marginBottom: '1.5rem' }}>
         <div className="eyebrow" style={{ marginBottom: 0 }}>Habit consistency</div>
