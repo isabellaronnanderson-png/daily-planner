@@ -6,6 +6,8 @@ export default function NotesWidget({ notes, setNotes, activeNoteId, setActiveNo
   const pendingCursorRef = useRef(null);
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [dragId, setDragId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
 
   const activeNote = notes.find((n) => n.id === activeNoteId) || notes[0];
 
@@ -40,6 +42,17 @@ export default function NotesWidget({ notes, setNotes, activeNoteId, setActiveNo
     const next = notes.filter((n) => n.id !== id);
     setNotes(next);
     if (activeNoteId === id) setActiveNoteId(next[0].id);
+  }
+
+  function reorderNotes(draggedId, targetId) {
+    if (!draggedId || draggedId === targetId) return;
+    const from = notes.findIndex((n) => n.id === draggedId);
+    const to = notes.findIndex((n) => n.id === targetId);
+    if (from < 0 || to < 0) return;
+    const next = [...notes];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setNotes(next);
   }
 
   function startRename(note) {
@@ -95,7 +108,16 @@ export default function NotesWidget({ notes, setNotes, activeNoteId, setActiveNo
     <div className="scratchpad-box">
       <div className="notes-tab-row">
         {notes.map((note) => (
-          <div key={note.id} className={`notes-tab ${note.id === activeNote.id ? 'active' : ''}`}>
+          <div
+            key={note.id}
+            className={`notes-tab ${note.id === activeNote.id ? 'active' : ''} ${dragOverId === note.id && dragId !== note.id ? 'drag-over' : ''} ${dragId === note.id ? 'dragging' : ''}`}
+            draggable={renamingId !== note.id}
+            onDragStart={() => setDragId(note.id)}
+            onDragOver={(e) => { e.preventDefault(); setDragOverId(note.id); }}
+            onDragLeave={() => setDragOverId(null)}
+            onDrop={(e) => { e.preventDefault(); reorderNotes(dragId, note.id); setDragId(null); setDragOverId(null); }}
+            onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+          >
             {renamingId === note.id ? (
               <input
                 className="notes-tab-input"
