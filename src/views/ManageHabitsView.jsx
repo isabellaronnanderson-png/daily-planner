@@ -34,13 +34,17 @@ const EMPTY_DRAFT = {
   days: [],
   everyNth: 1,
   resetDay: 1,
+  resetEvery: 1,
   groupId: '',
   skipOnHoliday: false,
 };
 
 function regularBadges(habit) {
   const badges = [];
-  if (habit.cadence === 'week') badges.push(`Weekly · resets ${WEEKDAY_NAMES[habit.resetDay ?? 1]}`);
+  if (habit.cadence === 'week') {
+    const every = habit.resetEvery || 1;
+    badges.push(`${every > 1 ? `Every ${every} weeks` : 'Weekly'} · resets ${WEEKDAY_NAMES[habit.resetDay ?? 1]}`);
+  }
   if (habit.cadence === 'month') badges.push(`Monthly · resets ${ordinal(habit.resetDay ?? 1)}`);
   if ((habit.targetCount || 1) > 1) badges.push(`${habit.targetCount}x`);
   return badges;
@@ -76,7 +80,7 @@ function ManageRow({ name, badges, skipOnHoliday, dragOver, draggable, onEdit, o
 }
 
 export default function ManageHabitsView({
-  habits, addHabit, editHabit, deleteHabit, reorderHabits,
+  habits, addHabit, editHabit, deleteHabit, removeHabitOnly, removeInjectedInstances, reorderHabits,
   groups, addGroup, toggleGroupCollapsed, deleteGroup, renameGroup, reorderGroups,
   weeklyHabits, setWeeklyHabits,
 }) {
@@ -105,6 +109,7 @@ export default function ManageHabitsView({
       days: [],
       everyNth: 1,
       resetDay: habit.resetDay ?? 1,
+      resetEvery: habit.resetEvery || 1,
       groupId: habit.groupId || '',
       skipOnHoliday: !!habit.skipOnHoliday,
     });
@@ -118,6 +123,7 @@ export default function ManageHabitsView({
       days: [...w.days],
       everyNth: w.everyNth || 1,
       resetDay: 1,
+      resetEvery: 1,
       groupId: w.groupId || '',
       skipOnHoliday: !!w.skipOnHoliday,
     });
@@ -139,10 +145,13 @@ export default function ManageHabitsView({
     e.preventDefault();
     if (!draft.name.trim()) return;
 
+    const isEdit = habitModal.mode === 'edit';
+    const originalType = habitModal.type; // 'regular' | 'dayspecific' (edit only)
+
     if (draft.repeats === 'dayspecific') {
       if (draft.days.length === 0) return;
       const everyNth = parseInt(draft.everyNth, 10) || 1;
-      if (habitModal.mode === 'edit' && habitModal.type === 'dayspecific') {
+      if (isEdit && originalType === 'dayspecific') {
         setWeeklyHabits(
           weeklyHabits.map((w) =>
             w.id === habitModal.id
@@ -151,6 +160,9 @@ export default function ManageHabitsView({
           )
         );
       } else {
+        // Creating new, or converting a regular habit into a day-specific one:
+        // in the latter case, remove the original so it isn't duplicated.
+        if (isEdit && originalType === 'regular') removeHabitOnly(habitModal.id);
         setWeeklyHabits([
           ...weeklyHabits,
           {
@@ -166,11 +178,19 @@ export default function ManageHabitsView({
       }
     } else {
       const targetCount = parseInt(draft.targetCount, 10) || 1;
-      const resetDay = parseInt(draft.resetDay, 10) || 1;
-      if (habitModal.mode === 'edit' && habitModal.type === 'regular') {
-        editHabit(habitModal.id, { name: draft.name, targetCount, groupId: draft.groupId || null, cadence: draft.repeats, skipOnHoliday: draft.skipOnHoliday, resetDay });
+      const parsedReset = parseInt(draft.resetDay, 10);
+      const resetDay = Number.isNaN(parsedReset) ? 1 : parsedReset;
+      const resetEvery = parseInt(draft.resetEvery, 10) || 1;
+      if (isEdit && originalType === 'regular') {
+        editHabit(habitModal.id, { name: draft.name, targetCount, groupId: draft.groupId || null, cadence: draft.repeats, skipOnHoliday: draft.skipOnHoliday, resetDay, resetEvery });
       } else {
-        addHabit({ name: draft.name.trim(), targetCount, cadence: draft.repeats, groupId: draft.groupId || null, skipOnHoliday: draft.skipOnHoliday, resetDay });
+        // Creating new, or converting a day-specific habit into a regular one:
+        // in the latter case, remove the original (and any of today's copies).
+        if (isEdit && originalType === 'dayspecific') {
+          setWeeklyHabits(weeklyHabits.filter((w) => w.id !== habitModal.id));
+          removeInjectedInstances(habitModal.id);
+        }
+        addHabit({ name: draft.name.trim(), targetCount, cadence: draft.repeats, groupId: draft.groupId || null, skipOnHoliday: draft.skipOnHoliday, resetDay, resetEvery });
       }
     }
     setHabitModal(null);
@@ -417,18 +437,33 @@ export default function ManageHabitsView({
               ) : (
                 <>
                   <div className="modal-row">
-                    <label>{draft.repeats === 'day' ? 'Times per day' : `Times per ${draft.repeats}`}</label>
+                    <label>
+                      {draft.repeats === 'day'
+                        ? 'Times per day'
+                        : draft.repeats === 'week' && (parseInt(draft.resetEvery, 10) || 1) > 1
+                        ? `Times per ${parseInt(draft.resetEvery, 10)} weeks`
+                        : `Times per ${draft.repeats}`}
+                    </label>
                     <input type="number" min="1" value={draft.targetCount} onChange={(e) => setDraft({ ...draft, targetCount: e.target.value })} />
                   </div>
                   {draft.repeats === 'week' && (
-                    <div className="modal-row">
-                      <label>Resets on</label>
-                      <select value={draft.resetDay} onChange={(e) => setDraft({ ...draft, resetDay: parseInt(e.target.value, 10) })}>
-                        {WEEKDAY_NAMES.map((d, i) => (
-                          <option key={i} value={i}>{d}</option>
-                        ))}
-                      </select>
-                    </div>
+                    <>
+                      <div className="modal-row">
+                        <label>Resets on</label>
+                        <select value={draft.resetDay} onChange={(e) => setDraft({ ...draft, resetDay: parseInt(e.target.value, 10) })}>
+                          {WEEKDAY_NAMES.map((d, i) => (
+                            <option key={i} value={i}>{d}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="modal-row">
+                        <label>Every</label>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <input type="number" min="1" value={draft.resetEvery} onChange={(e) => setDraft({ ...draft, resetEvery: e.target.value })} style={{ width: 70 }} />
+                          <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>week(s) — e.g. 2 = only resets every other week</span>
+                        </div>
+                      </div>
+                    </>
                   )}
                   {draft.repeats === 'month' && (
                     <div className="modal-row">

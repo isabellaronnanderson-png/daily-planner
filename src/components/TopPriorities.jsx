@@ -21,7 +21,7 @@ export default function TopPriorities({ focusItems, toggleTodo, removeFromFocus,
 
   return (
     <div className="priorities-box">
-      <h4 className="priorities-title">If nothing else today…</h4>
+      <h4 className="priorities-title">Daily priorities</h4>
 
       {focusItems.map((todo) => (
         <div className="priorities-row" key={todo.id}>

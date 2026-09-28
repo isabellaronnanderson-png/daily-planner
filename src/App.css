@@ -1452,6 +1452,13 @@ input.todo-inline-input {
   padding: 4px 8px;
   border-radius: var(--radius);
 }
+.sync-status-error {
+  background: var(--red);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ===== Modal ===== */
 .modal-backdrop {

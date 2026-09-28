@@ -18,7 +18,7 @@ export default function Header({
   tabOrder, setTabOrder,
   currentDate,
   title, setTitle,
-  user, signOut, syncStatus, downloadBackup, restoreFromFile,
+  user, signOut, syncStatus, syncError, downloadBackup, restoreFromFile,
 }) {
   const fileRef = useRef(null);
   const coverRef = useRef(null);
@@ -118,7 +118,11 @@ export default function Header({
       <div className="cover" ref={coverRef}>
         <div className="header-utility-row">
           {syncStatus === 'syncing' && <span className="sync-status">Syncing…</span>}
-          {syncStatus === 'error' && <span className="sync-status">Sync error</span>}
+          {syncStatus === 'error' && (
+            <span className="sync-status sync-status-error" title={syncError}>
+              Not saved — retrying{syncError ? `: ${syncError}` : ''}
+            </span>
+          )}
           <BackupMenu downloadBackup={downloadBackup} restoreFromFile={restoreFromFile} />
           <AccountBadge user={user} signOut={signOut} />
         </div>

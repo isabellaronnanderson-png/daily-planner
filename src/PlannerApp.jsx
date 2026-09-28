@@ -131,7 +131,7 @@ export default function PlannerApp({ user, signOut }) {
     if (data.chores !== undefined) setChores(data.chores);
   }
 
-  const { status: syncStatus } = useCloudSync(user, appState, applyFullState);
+  const { status: syncStatus, errorMessage: syncError } = useCloudSync(user, appState, applyFullState);
 
   function downloadBackup() {
     const blob = new Blob([JSON.stringify(appState, null, 2)], { type: 'application/json' });
@@ -345,10 +345,19 @@ export default function PlannerApp({ user, signOut }) {
       .map((h) => {
         if (h.cadence === 'week') {
           const resetDay = h.resetDay ?? 1;
-          const currentKey = weekKeyFor(nowIso, resetDay);
-          if (h.cycleKey !== currentKey) {
+          const everyWeeks = h.resetEvery || 1;
+          // The most recent occurrence of this habit's reset weekday (as a
+          // timestamp). It resets once that anchor is at least N weeks past
+          // the last one it reset on — so it catches up on the next "New
+          // day" even if the actual reset day was missed.
+          const currentAnchor = weekKeyFor(nowIso, resetDay);
+          if (h.cycleKey == null) {
+            return { ...h, cycleKey: currentAnchor }; // older habit: start tracking, keep progress
+          }
+          const daysSince = Math.round((currentAnchor - h.cycleKey) / (24 * 60 * 60 * 1000));
+          if (daysSince >= 7 * everyWeeks) {
             weeklyClosing.push(toSnapshotItem(h));
-            return { ...h, completed: false, count: 0, cycleKey: currentKey };
+            return { ...h, completed: false, count: 0, cycleKey: currentAnchor };
           }
           return h; // same cycle — carry over untouched
         }
@@ -388,13 +397,35 @@ export default function PlannerApp({ user, signOut }) {
   }
 
   // ---- Habit actions ----
-  function addHabit({ name, targetCount = 1, groupId = null, cadence = 'day', skipOnHoliday = false, resetDay = null }) {
+  function addHabit({ name, targetCount = 1, groupId = null, cadence = 'day', skipOnHoliday = false, resetDay = null, resetEvery = 1 }) {
     const effectiveResetDay = resetDay ?? 1;
     const cycleKey =
       cadence === 'week' ? weekKeyFor(new Date().toISOString(), effectiveResetDay)
       : cadence === 'month' ? monthKeyFor(new Date().toISOString(), effectiveResetDay)
       : undefined;
-    setHabits([...habits, { id: 'h_' + Date.now(), name, completed: false, count: 0, targetCount: Math.max(1, targetCount), groupId: groupId || null, cadence, skipOnHoliday, resetDay: effectiveResetDay, cycleKey }]);
+    const newHabit = {
+      id: 'h_' + Date.now(),
+      name,
+      completed: false,
+      count: 0,
+      targetCount: Math.max(1, targetCount),
+      groupId: groupId || null,
+      cadence,
+      skipOnHoliday,
+      resetDay: effectiveResetDay,
+      resetEvery: Math.max(1, resetEvery || 1),
+      cycleKey,
+    };
+    setHabits((prev) => [...prev, newHabit]);
+  }
+
+  // Used when a habit is converted to a different kind (e.g. weekly goal →
+  // day-specific): removes the old entry without touching its history.
+  function removeHabitOnly(id) {
+    setHabits((prev) => prev.filter((h) => h.id !== id));
+  }
+  function removeInjectedInstances(weeklyHabitId) {
+    setHabits((prev) => prev.filter((h) => !(h.fromWeekly && h.weeklyHabitId === weeklyHabitId)));
   }
 
   // Click on the Nth mark: if it's already at that count, step back to just
@@ -429,7 +460,7 @@ export default function PlannerApp({ user, signOut }) {
     setHabits(
       habits.map((h) =>
         h.id === id
-          ? { ...h, name: trimmedName, targetCount: nextTarget, count: Math.min(h.count || 0, nextTarget), groupId: updates.groupId || null, cadence: nextCadence, skipOnHoliday: !!updates.skipOnHoliday, resetDay: nextResetDay, cycleKey }
+          ? { ...h, name: trimmedName, targetCount: nextTarget, count: Math.min(h.count || 0, nextTarget), groupId: updates.groupId || null, cadence: nextCadence, skipOnHoliday: !!updates.skipOnHoliday, resetDay: nextResetDay, resetEvery: Math.max(1, updates.resetEvery || 1), cycleKey }
           : h
       )
     );
@@ -639,6 +670,7 @@ export default function PlannerApp({ user, signOut }) {
         user={user}
         signOut={signOut}
         syncStatus={syncStatus}
+        syncError={syncError}
         downloadBackup={downloadBackup}
         restoreFromFile={restoreFromFile}
       />
@@ -676,6 +708,8 @@ export default function PlannerApp({ user, signOut }) {
           addHabit={addHabit}
           editHabit={editHabit}
           deleteHabit={deleteHabit}
+          removeHabitOnly={removeHabitOnly}
+          removeInjectedInstances={removeInjectedInstances}
           reorderHabits={reorderHabits}
           groups={groups}
           addGroup={addGroup}
