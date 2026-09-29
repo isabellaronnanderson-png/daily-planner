@@ -791,9 +791,15 @@ input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:foc
   gap: 10px;
   padding: 7px 0;
   border-top: 1px solid var(--border);
-  cursor: grab;
 }
-.priorities-row:active {
+.priorities-drag-handle {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  cursor: grab;
+  flex-shrink: 0;
+}
+.priorities-drag-handle:active {
   cursor: grabbing;
 }
 .priorities-row:first-of-type {

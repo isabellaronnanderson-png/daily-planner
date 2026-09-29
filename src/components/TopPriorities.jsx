@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { Square, Check, X } from 'lucide-react';
+import { Square, Check, X, GripVertical } from 'lucide-react';
 
 // Rows here come in two kinds, interleaved in one editable, draggable order:
 //  - "todo" entries: tasks pulled in from the To-do tab (check off / remove
@@ -112,18 +112,26 @@ export default function TopPriorities({ focusItems, toggleTodo, removeFromFocus,
 
       {priorityOrder.map((entry, index) => {
         const key = entryKey(entry);
-        const dragProps = {
-          draggable: true,
-          onDragStart: () => { dragKeyRef.current = key; },
+        const rowDropProps = {
           onDragOver: (e) => e.preventDefault(),
           onDrop: (e) => { e.preventDefault(); reorder(dragKeyRef.current, key); dragKeyRef.current = null; },
         };
+        const handleProps = {
+          draggable: true,
+          onDragStart: () => { dragKeyRef.current = key; },
+        };
+        const handle = (
+          <span className="priorities-drag-handle" {...handleProps} aria-hidden="true">
+            <GripVertical size={14} />
+          </span>
+        );
 
         if (entry.kind === 'todo') {
           const todo = focusById[entry.todoId];
           if (!todo) return null;
           return (
-            <div className="priorities-row" key={key} {...dragProps}>
+            <div className="priorities-row" key={key} {...rowDropProps}>
+              {handle}
               <button className="check-btn unchecked" onClick={() => toggleTodo(todo.id)} aria-label="Mark done">
                 <Square size={17} />
               </button>
@@ -135,7 +143,8 @@ export default function TopPriorities({ focusItems, toggleTodo, removeFromFocus,
         }
 
         return (
-          <div className="priorities-row" key={key} {...dragProps}>
+          <div className="priorities-row" key={key} {...rowDropProps}>
+            {handle}
             <button
               className={`check-btn ${entry.done ? '' : 'unchecked'}`}
               onClick={() => toggleLineDone(entry.id)}
