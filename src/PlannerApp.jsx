@@ -43,9 +43,10 @@ function weekKeyFor(dateIso, resetWeekday) {
   const anchor = new Date(d.getFullYear(), d.getMonth(), d.getDate() - diff);
   return anchor.getTime();
 }
-// monthKeyFor returns a stable key that only changes when the configured
-// reset day-of-month (1-28) is crossed.
-function monthKeyFor(dateIso, resetDay) {
+// monthIndexFor returns an absolute month index (year*12+month) for the
+// most recent occurrence of the configured reset day-of-month (1-28), so
+// gaps of N months can be measured by simple subtraction.
+function monthIndexFor(dateIso, resetDay) {
   const d = new Date(dateIso);
   let year = d.getFullYear();
   let month = d.getMonth();
@@ -53,7 +54,7 @@ function monthKeyFor(dateIso, resetDay) {
     month -= 1;
     if (month < 0) { month = 11; year -= 1; }
   }
-  return `${year}-${month}-${resetDay}`;
+  return year * 12 + month;
 }
 
 function reorderById(list, draggedId, targetId) {
@@ -93,7 +94,7 @@ export default function PlannerApp({ user, signOut }) {
 
   const [chores, setChores] = useLocalStorage('planner_chores', DEFAULT_CHORES);
   const [officeDays, setOfficeDays] = useLocalStorage('planner_office_days', []);
-  const [priorityLines, setPriorityLines] = useLocalStorage('planner_priority_lines', []);
+  const [priorityOrder, setPriorityOrder] = useLocalStorage('planner_priority_order', []);
 
   const safeTabOrder = [...tabOrder, ...DEFAULT_TAB_ORDER.filter((k) => !tabOrder.includes(k))].filter((k) => k !== 'weekend' && k !== 'schedule');
 
@@ -103,7 +104,7 @@ export default function PlannerApp({ user, signOut }) {
     tabOrder, coverImage, coverPosition, currentDate, title,
     habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, weeklyHabits, groups,
     todoSectionCollapsed, todos, isHolidayMode, holidayStartedAt,
-    scratchpad, notes, activeNoteId, dailyNoteText, dailyNoteImage, chores, officeDays, priorityLines,
+    scratchpad, notes, activeNoteId, dailyNoteText, dailyNoteImage, chores, officeDays, priorityOrder,
   };
 
   // Applies a full state blob (from the cloud or a restored backup file) —
@@ -133,7 +134,7 @@ export default function PlannerApp({ user, signOut }) {
     if (data.dailyNoteImage !== undefined) setDailyNoteImage(data.dailyNoteImage);
     if (data.chores !== undefined) setChores(data.chores);
     if (data.officeDays !== undefined) setOfficeDays(data.officeDays);
-    if (data.priorityLines !== undefined) setPriorityLines(data.priorityLines);
+    if (data.priorityOrder !== undefined) setPriorityOrder(data.priorityOrder);
   }
 
   const { status: syncStatus, errorMessage: syncError } = useCloudSync(user, appState, applyFullState);
@@ -368,10 +369,14 @@ export default function PlannerApp({ user, signOut }) {
         }
         if (h.cadence === 'month') {
           const resetDay = h.resetDay ?? 1;
-          const currentKey = monthKeyFor(nowIso, resetDay);
-          if (h.cycleKey !== currentKey) {
+          const everyMonths = h.resetEvery || 1;
+          const currentIndex = monthIndexFor(nowIso, resetDay);
+          if (h.cycleKey == null) {
+            return { ...h, cycleKey: currentIndex }; // older habit: start tracking, keep progress
+          }
+          if (currentIndex - h.cycleKey >= everyMonths) {
             monthlyClosing.push(toSnapshotItem(h));
-            return { ...h, completed: false, count: 0, cycleKey: currentKey };
+            return { ...h, completed: false, count: 0, cycleKey: currentIndex };
           }
           return h;
         }
@@ -388,8 +393,9 @@ export default function PlannerApp({ user, signOut }) {
     setHabits([...baseHabits, ...freshlyTriggered]);
     setCurrentDate(new Date().toISOString());
     // Freeform priority lines: ticked-off ones clear with the day, unfinished
-    // ones carry over. Office days only matter for the current month.
-    setPriorityLines((prev) => prev.filter((l) => !l.done));
+    // ones (and any pulled-in tasks) carry over. Office days only matter for
+    // the current month.
+    setPriorityOrder((prev) => prev.filter((e) => !(e.kind === 'line' && e.done)));
     const thisMonth = monthKeyOf(new Date().toISOString());
     setOfficeDays((prev) => prev.filter((d) => d.startsWith(thisMonth)));
 
@@ -411,7 +417,7 @@ export default function PlannerApp({ user, signOut }) {
     const effectiveResetDay = resetDay ?? 1;
     const cycleKey =
       cadence === 'week' ? weekKeyFor(new Date().toISOString(), effectiveResetDay)
-      : cadence === 'month' ? monthKeyFor(new Date().toISOString(), effectiveResetDay)
+      : cadence === 'month' ? monthIndexFor(new Date().toISOString(), effectiveResetDay)
       : undefined;
     const newHabit = {
       id: 'h_' + Date.now(),
@@ -465,7 +471,7 @@ export default function PlannerApp({ user, signOut }) {
     const cadenceOrResetChanged = nextCadence !== habit.cadence || nextResetDay !== (habit.resetDay ?? 1);
     const cycleKey =
       nextCadence === 'week' ? (cadenceOrResetChanged ? weekKeyFor(new Date().toISOString(), nextResetDay) : habit.cycleKey)
-      : nextCadence === 'month' ? (cadenceOrResetChanged ? monthKeyFor(new Date().toISOString(), nextResetDay) : habit.cycleKey)
+      : nextCadence === 'month' ? (cadenceOrResetChanged ? monthIndexFor(new Date().toISOString(), nextResetDay) : habit.cycleKey)
       : undefined;
     setHabits(
       habits.map((h) =>
@@ -699,8 +705,8 @@ export default function PlannerApp({ user, signOut }) {
           officeDays={officeDays}
           toggleOfficeDay={toggleOfficeDay}
           currentDate={currentDate}
-          priorityLines={priorityLines}
-          setPriorityLines={setPriorityLines}
+          priorityOrder={priorityOrder}
+          setPriorityOrder={setPriorityOrder}
         />
       )}
       {activeTab === 'manage' && (

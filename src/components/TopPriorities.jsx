@@ -1,99 +1,153 @@
-import { useState } from 'react';
-import { Square, Check } from 'lucide-react';
+import { useRef, useEffect } from 'react';
+import { Square, Check, X } from 'lucide-react';
 
-// Two kinds of rows live here:
-//  - tasks pulled in from the To-do tab (real to-dos: check off / remove
-//    sends them back or completes them there), and
-//  - freeform lines you type yourself — plain scratch notes that stay in this
-//    box and never turn into to-do items.
-export default function TopPriorities({ focusItems, toggleTodo, removeFromFocus, priorityLines, setPriorityLines }) {
-  const [extraSlots, setExtraSlots] = useState(0);
-  const [blankTexts, setBlankTexts] = useState({});
+// Rows here come in two kinds, interleaved in one editable, draggable order:
+//  - "todo" entries: tasks pulled in from the To-do tab (check off / remove
+//    sends them back or completes them there — no text to edit here)
+//  - "line" entries: freeform scratch lines typed directly in this box,
+//    which never become to-do items
+function entryKey(entry) {
+  return entry.kind === 'todo' ? 'todo_' + entry.todoId : entry.id;
+}
+function makeBlankLine() {
+  return { kind: 'line', id: 'pl_' + Date.now() + Math.random().toString(36).slice(2, 6), text: '', done: false };
+}
 
-  const filledRows = focusItems.length + priorityLines.length;
-  const neededBlanks = Math.max(0, 3 - filledRows) + extraSlots;
+export default function TopPriorities({ focusItems, toggleTodo, removeFromFocus, priorityOrder, setPriorityOrder }) {
+  const inputRefs = useRef({});
+  const pendingFocusKey = useRef(null);
+  const dragKeyRef = useRef(null);
 
-  function commitBlank(index) {
-    const text = (blankTexts[index] || '').trim();
-    if (!text) return;
-    setPriorityLines((prev) => [
-      ...prev,
-      { id: 'pl_' + Date.now() + Math.random().toString(36).slice(2, 6), text, done: false },
-    ]);
-    setBlankTexts((prev) => {
-      const next = { ...prev };
-      delete next[index];
-      return next;
-    });
-    if (extraSlots > 0) setExtraSlots((n) => Math.max(0, n - 1));
+  const focusById = {};
+  focusItems.forEach((t) => { focusById[t.id] = t; });
+
+  // Self-heal: a newly-focused todo gets its own row (inserted just above any
+  // trailing blank lines), and a row whose todo is no longer focused is
+  // dropped — so this stays in sync with the To-do tab without extra wiring.
+  useEffect(() => {
+    const blanks = priorityOrder.filter((e) => e.kind === 'line' && e.text.trim() === '');
+    const rest = priorityOrder.filter((e) => !(e.kind === 'line' && e.text.trim() === ''));
+    const cleanedRest = rest.filter((e) => e.kind === 'line' || focusById[e.todoId]);
+    const known = new Set(cleanedRest.filter((e) => e.kind === 'todo').map((e) => e.todoId));
+    const missing = focusItems.filter((t) => !known.has(t.id)).map((t) => ({ kind: 'todo', todoId: t.id }));
+    if (missing.length > 0 || cleanedRest.length !== rest.length) {
+      setPriorityOrder([...cleanedRest, ...missing, ...blanks]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusItems.map((t) => t.id).join(',')]);
+
+  // Always keep exactly one blank line at the end, ready to type into.
+  useEffect(() => {
+    const hasBlank = priorityOrder.some((e) => e.kind === 'line' && e.text.trim() === '');
+    if (!hasBlank) setPriorityOrder([...priorityOrder, makeBlankLine()]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priorityOrder.length]);
+
+  useEffect(() => {
+    if (pendingFocusKey.current && inputRefs.current[pendingFocusKey.current]) {
+      inputRefs.current[pendingFocusKey.current].focus();
+      pendingFocusKey.current = null;
+    }
+  });
+
+  function updateLineText(id, text) {
+    setPriorityOrder(priorityOrder.map((e) => (e.kind === 'line' && e.id === id ? { ...e, text } : e)));
   }
-
-  function updateLine(id, text) {
-    setPriorityLines((prev) => prev.map((l) => (l.id === id ? { ...l, text } : l)));
-  }
-  function toggleLine(id) {
-    setPriorityLines((prev) => prev.map((l) => (l.id === id ? { ...l, done: !l.done } : l)));
+  function toggleLineDone(id) {
+    setPriorityOrder(priorityOrder.map((e) => (e.kind === 'line' && e.id === id ? { ...e, done: !e.done } : e)));
   }
   function removeLine(id) {
-    setPriorityLines((prev) => prev.filter((l) => l.id !== id));
+    setPriorityOrder(priorityOrder.filter((e) => !(e.kind === 'line' && e.id === id)));
+  }
+  function insertBlankAfter(afterKey) {
+    const newEntry = makeBlankLine();
+    const idx = priorityOrder.findIndex((e) => entryKey(e) === afterKey);
+    const next = [...priorityOrder];
+    if (idx === -1) next.push(newEntry);
+    else next.splice(idx + 1, 0, newEntry);
+    setPriorityOrder(next);
+    pendingFocusKey.current = entryKey(newEntry);
+  }
+
+  function handleLineKeyDown(e, entry, index) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!entry.text.trim()) return;
+      insertBlankAfter(entryKey(entry));
+    } else if (e.key === 'Backspace' && entry.text === '' && priorityOrder.length > 1) {
+      e.preventDefault();
+      const prevEntry = priorityOrder[index - 1];
+      removeLine(entry.id);
+      if (prevEntry) pendingFocusKey.current = entryKey(prevEntry);
+    }
+  }
+
+  function reorder(draggedKey, targetKey) {
+    if (!draggedKey || draggedKey === targetKey) return;
+    const from = priorityOrder.findIndex((e) => entryKey(e) === draggedKey);
+    const to = priorityOrder.findIndex((e) => entryKey(e) === targetKey);
+    if (from < 0 || to < 0) return;
+    const next = [...priorityOrder];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setPriorityOrder(next);
   }
 
   return (
     <div className="priorities-box">
       <h4 className="priorities-title">Daily priorities</h4>
 
-      {focusItems.map((todo) => (
-        <div className="priorities-row" key={todo.id}>
-          <button className="check-btn unchecked" onClick={() => toggleTodo(todo.id)} aria-label="Mark done">
-            <Square size={17} />
-          </button>
-          <span style={{ flex: 1, fontSize: 14.5, minWidth: 0 }}>{todo.name}</span>
-          {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
-          <button className="btn-ghost btn-danger" style={{ fontSize: 11 }} onClick={() => removeFromFocus(todo.id)}>Remove</button>
-        </div>
-      ))}
+      {priorityOrder.map((entry, index) => {
+        const key = entryKey(entry);
+        const dragProps = {
+          draggable: true,
+          onDragStart: () => { dragKeyRef.current = key; },
+          onDragOver: (e) => e.preventDefault(),
+          onDrop: (e) => { e.preventDefault(); reorder(dragKeyRef.current, key); dragKeyRef.current = null; },
+        };
 
-      {priorityLines.map((line) => (
-        <div className="priorities-row" key={line.id}>
-          <button
-            className={`check-btn ${line.done ? '' : 'unchecked'}`}
-            onClick={() => toggleLine(line.id)}
-            aria-label={line.done ? 'Mark not done' : 'Mark done'}
-          >
-            {line.done ? <Check size={17} /> : <Square size={17} />}
-          </button>
-          <input
-            type="text"
-            className="priorities-input"
-            value={line.text}
-            onChange={(e) => updateLine(line.id, e.target.value)}
-            onBlur={() => { if (!line.text.trim()) removeLine(line.id); }}
-            style={line.done ? { textDecoration: 'line-through', opacity: 0.5 } : undefined}
-          />
-          <button className="btn-ghost btn-danger" style={{ fontSize: 11 }} onClick={() => removeLine(line.id)}>Remove</button>
-        </div>
-      ))}
+        if (entry.kind === 'todo') {
+          const todo = focusById[entry.todoId];
+          if (!todo) return null;
+          return (
+            <div className="priorities-row" key={key} {...dragProps}>
+              <button className="check-btn unchecked" onClick={() => toggleTodo(todo.id)} aria-label="Mark done">
+                <Square size={17} />
+              </button>
+              <span style={{ flex: 1, fontSize: 14.5, minWidth: 0 }}>{todo.name}</span>
+              {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
+              <button className="btn-ghost btn-danger" style={{ fontSize: 11 }} onClick={() => removeFromFocus(todo.id)}>Remove</button>
+            </div>
+          );
+        }
 
-      {Array.from({ length: neededBlanks }).map((_, i) => (
-        <div className="priorities-row" key={'blank_' + i}>
-          <Square size={17} style={{ color: 'var(--border-strong)', flexShrink: 0 }} />
-          <input
-            type="text"
-            className="priorities-input"
-            placeholder="Jot something down…"
-            value={blankTexts[i] || ''}
-            onChange={(e) => setBlankTexts((prev) => ({ ...prev, [i]: e.target.value }))}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); commitBlank(i); }
-            }}
-            onBlur={() => commitBlank(i)}
-          />
-        </div>
-      ))}
-
-      <button className="btn-ghost priorities-add-btn" onClick={() => setExtraSlots((n) => n + 1)}>
-        + Add line
-      </button>
+        return (
+          <div className="priorities-row" key={key} {...dragProps}>
+            <button
+              className={`check-btn ${entry.done ? '' : 'unchecked'}`}
+              onClick={() => toggleLineDone(entry.id)}
+              aria-label={entry.done ? 'Mark not done' : 'Mark done'}
+            >
+              {entry.done ? <Check size={17} /> : <Square size={17} />}
+            </button>
+            <input
+              ref={(el) => { if (el) inputRefs.current[key] = el; else delete inputRefs.current[key]; }}
+              type="text"
+              className="priorities-input"
+              placeholder="Jot something down…"
+              value={entry.text}
+              onChange={(e) => updateLineText(entry.id, e.target.value)}
+              onKeyDown={(e) => handleLineKeyDown(e, entry, index)}
+              style={entry.done ? { textDecoration: 'line-through', opacity: 0.5 } : undefined}
+            />
+            {entry.text && (
+              <button className="chore-remove" onClick={() => removeLine(entry.id)} aria-label="Remove">
+                <X size={15} />
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

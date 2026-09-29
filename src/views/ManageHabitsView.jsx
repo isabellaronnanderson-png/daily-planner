@@ -45,7 +45,10 @@ function regularBadges(habit) {
     const every = habit.resetEvery || 1;
     badges.push(`${every > 1 ? `Every ${every} weeks` : 'Weekly'} · resets ${WEEKDAY_NAMES[habit.resetDay ?? 1]}`);
   }
-  if (habit.cadence === 'month') badges.push(`Monthly · resets ${ordinal(habit.resetDay ?? 1)}`);
+  if (habit.cadence === 'month') {
+    const every = habit.resetEvery || 1;
+    badges.push(`${every > 1 ? `Every ${every} months` : 'Monthly'} · resets the ${ordinal(habit.resetDay ?? 1)}`);
+  }
   if ((habit.targetCount || 1) > 1) badges.push(`${habit.targetCount}x`);
   return badges;
 }
@@ -440,8 +443,8 @@ export default function ManageHabitsView({
                     <label>
                       {draft.repeats === 'day'
                         ? 'Times per day'
-                        : draft.repeats === 'week' && (parseInt(draft.resetEvery, 10) || 1) > 1
-                        ? `Times per ${parseInt(draft.resetEvery, 10)} weeks`
+                        : (draft.repeats === 'week' || draft.repeats === 'month') && (parseInt(draft.resetEvery, 10) || 1) > 1
+                        ? `Times per ${parseInt(draft.resetEvery, 10)} ${draft.repeats === 'week' ? 'weeks' : 'months'}`
                         : `Times per ${draft.repeats}`}
                     </label>
                     <input type="number" min="1" value={draft.targetCount} onChange={(e) => setDraft({ ...draft, targetCount: e.target.value })} />
@@ -466,14 +469,23 @@ export default function ManageHabitsView({
                     </>
                   )}
                   {draft.repeats === 'month' && (
-                    <div className="modal-row">
-                      <label>Resets on the</label>
-                      <select value={draft.resetDay} onChange={(e) => setDraft({ ...draft, resetDay: parseInt(e.target.value, 10) })}>
-                        {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                          <option key={d} value={d}>{ordinal(d)}</option>
-                        ))}
-                      </select>
-                    </div>
+                    <>
+                      <div className="modal-row">
+                        <label>Resets on the</label>
+                        <select value={draft.resetDay} onChange={(e) => setDraft({ ...draft, resetDay: parseInt(e.target.value, 10) })}>
+                          {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                            <option key={d} value={d}>{ordinal(d)}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="modal-row">
+                        <label>Every</label>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <input type="number" min="1" value={draft.resetEvery} onChange={(e) => setDraft({ ...draft, resetEvery: e.target.value })} style={{ width: 70 }} />
+                          <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>month(s) — e.g. 3 = only resets every 3rd month</span>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </>
               )}

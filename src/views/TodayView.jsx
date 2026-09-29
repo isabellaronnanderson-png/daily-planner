@@ -54,7 +54,7 @@ export default function TodayView({
   chores, resetChore,
   notes, setNotes, activeNoteId, setActiveNoteId,
   dailyNoteText, setDailyNoteText, dailyNoteImage, setDailyNoteImage,
-  priorityLines, setPriorityLines,
+  priorityOrder, setPriorityOrder,
   officeDays, toggleOfficeDay, currentDate,
 }) {
   const inOfficeToday = officeDays.includes(localDateKey(currentDate));
@@ -79,8 +79,8 @@ export default function TodayView({
         focusItems={focusItems}
         toggleTodo={toggleTodo}
         removeFromFocus={removeFromFocus}
-        priorityLines={priorityLines}
-        setPriorityLines={setPriorityLines}
+        priorityOrder={priorityOrder}
+        setPriorityOrder={setPriorityOrder}
       />
 
       <div className="section-row">
