@@ -10,7 +10,7 @@ function toDateStr(y, m, d) {
 // minDate / maxDate ("YYYY-MM-DD", both optional) grey out days outside the
 // allowed range; caption is an optional small heading; onClear is optional
 // (the "Clear" link only appears when there's a value AND a way to clear it).
-export default function CalendarPopover({ value, onSelect, onClear, onClose, minDate, maxDate, caption }) {
+export default function CalendarPopover({ value, onSelect, onClear, onClose, minDate, maxDate, caption, isDateDisabled }) {
   const initial = value
     ? new Date(value + 'T00:00:00')
     : maxDate
@@ -50,7 +50,7 @@ export default function CalendarPopover({ value, onSelect, onClear, onClose, min
           if (d === null) return <span key={i} />;
           const dateStr = toDateStr(viewYear, viewMonth, d);
           const isSelected = value === dateStr;
-          const outOfRange = (minDate && dateStr < minDate) || (maxDate && dateStr > maxDate);
+          const outOfRange = (minDate && dateStr < minDate) || (maxDate && dateStr > maxDate) || (isDateDisabled && isDateDisabled(dateStr));
           return (
             <button
               type="button"

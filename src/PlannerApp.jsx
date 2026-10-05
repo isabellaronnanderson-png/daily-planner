@@ -8,6 +8,7 @@ import TodoView from './views/TodoView';
 import ChoresView from './views/ChoresView';
 import InsightsView from './views/InsightsView';
 import { localDateKey, monthKeyOf } from './lib/officeDays';
+import { weekKeyFor, monthIndexFor, daysBetween } from './lib/cycles';
 import './App.css';
 
 const DEFAULT_TAB_ORDER = ['habits', 'manage', 'todo', 'chores', 'insights'];
@@ -34,29 +35,6 @@ const DEFAULT_CHORES = [
 ];
 
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-// weekKeyFor returns a stable key that only changes when the configured
-// reset weekday (0=Sun..6=Sat) is crossed, so "week" can be anchored to
-// whichever day the person prefers, not just Monday.
-function weekKeyFor(dateIso, resetWeekday) {
-  const d = new Date(dateIso);
-  const diff = (d.getDay() - resetWeekday + 7) % 7;
-  const anchor = new Date(d.getFullYear(), d.getMonth(), d.getDate() - diff);
-  return anchor.getTime();
-}
-// monthIndexFor returns an absolute month index (year*12+month) for the
-// most recent occurrence of the configured reset day-of-month (1-28), so
-// gaps of N months can be measured by simple subtraction.
-function monthIndexFor(dateIso, resetDay) {
-  const d = new Date(dateIso);
-  let year = d.getFullYear();
-  let month = d.getMonth();
-  if (d.getDate() < resetDay) {
-    month -= 1;
-    if (month < 0) { month = 11; year -= 1; }
-  }
-  return year * 12 + month;
-}
-
 function reorderById(list, draggedId, targetId) {
   const arr = [...list];
   const fromIdx = arr.findIndex((x) => x.id === draggedId);
@@ -296,18 +274,9 @@ export default function PlannerApp({ user, signOut }) {
     return list;
   }
 
-  // Normally begins the actual current day. Pass a "YYYY-MM-DD" string to
-  // begin a different day instead — for catching up after days when the app
-  // wasn't opened. It only moves forward (never before the day the app is
-  // already on, never past today), since going backwards would replay resets.
-  function beginNewDay(chosenDate) {
-    let target = new Date();
-    if (typeof chosenDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(chosenDate)) {
-      const [y, m, d] = chosenDate.split('-').map(Number);
-      target = new Date(y, m - 1, d, 12, 0, 0); // noon avoids timezone/DST edge cases
-      if (chosenDate <= localDateKey(currentDate) || chosenDate > localDateKey(new Date().toISOString())) return;
-    }
-    const closingDateKey = currentDate.split('T')[0];
+  function beginNewDay() {
+    const target = new Date();
+    const closingDateKey = localDateKey(currentDate);
     const nowIso = target.toISOString();
 
     // Daily habits are logged every day. Weekly/monthly goals only get a
@@ -318,8 +287,11 @@ export default function PlannerApp({ user, signOut }) {
     const toSnapshotItem = (h) => ({ name: h.name, completed: h.completed, count: h.count || 0, target: h.targetCount || 1 });
     const notPaused = (h) => !(isHolidayMode && h.skipOnHoliday);
 
-    const dailySnapshot = habits.filter((h) => notPaused(h) && h.cadence !== 'week' && h.cadence !== 'month' && !h.fromWeekly).map(toSnapshotItem);
-    setHabitHistory([{ date: closingDateKey, snapshot: dailySnapshot }, ...habitHistory].slice(0, 14));
+    // Day-specific habits that were due that day are part of the day's record too.
+    // daySpecificTracked marks this as the full record, so a habit that's absent
+    // from it is known not to have been due.
+    const dailySnapshot = habits.filter((h) => notPaused(h) && h.cadence !== 'week' && h.cadence !== 'month').map(toSnapshotItem);
+    setHabitHistory([{ date: closingDateKey, snapshot: dailySnapshot, daySpecificTracked: true }, ...habitHistory].slice(0, 14));
 
     const weeklyClosing = [];
     const monthlyClosing = [];
@@ -370,9 +342,9 @@ export default function PlannerApp({ user, signOut }) {
           if (h.cycleKey == null) {
             return { ...h, cycleKey: currentAnchor }; // older habit: start tracking, keep progress
           }
-          const daysSince = Math.round((currentAnchor - h.cycleKey) / (24 * 60 * 60 * 1000));
+          const daysSince = daysBetween(currentAnchor, h.cycleKey);
           if (daysSince >= 7 * everyWeeks) {
-            weeklyClosing.push(toSnapshotItem(h));
+            weeklyClosing.push({ ...toSnapshotItem(h), cycleStart: h.cycleKey });
             return { ...h, completed: false, count: 0, cycleKey: currentAnchor };
           }
           return h; // same cycle — carry over untouched
@@ -385,7 +357,7 @@ export default function PlannerApp({ user, signOut }) {
             return { ...h, cycleKey: currentIndex }; // older habit: start tracking, keep progress
           }
           if (currentIndex - h.cycleKey >= everyMonths) {
-            monthlyClosing.push(toSnapshotItem(h));
+            monthlyClosing.push({ ...toSnapshotItem(h), cycleStart: h.cycleKey });
             return { ...h, completed: false, count: 0, cycleKey: currentIndex };
           }
           return h;
@@ -713,8 +685,16 @@ export default function PlannerApp({ user, signOut }) {
           dailyNoteImage={dailyNoteImage}
           setDailyNoteImage={setDailyNoteImage}
           officeDays={officeDays}
+          setOfficeDays={setOfficeDays}
           toggleOfficeDay={toggleOfficeDay}
           currentDate={currentDate}
+          weeklyHabits={weeklyHabits}
+          habitHistory={habitHistory}
+          setHabitHistory={setHabitHistory}
+          weeklyGoalHistory={weeklyGoalHistory}
+          setWeeklyGoalHistory={setWeeklyGoalHistory}
+          monthlyGoalHistory={monthlyGoalHistory}
+          setMonthlyGoalHistory={setMonthlyGoalHistory}
           priorityOrder={priorityOrder}
           setPriorityOrder={setPriorityOrder}
         />

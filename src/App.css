@@ -1679,3 +1679,68 @@ input.todo-inline-input {
 .today-date.stale {
   color: var(--red-light);
 }
+
+/* ===== Log a past day ===== */
+.modal.pastday-modal {
+  width: min(460px, calc(100vw - 2rem));
+}
+.pastday-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.pastday-head h2 {
+  margin: 0;
+}
+.pastday-intro {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  margin: 4px 0 6px;
+}
+.pastday-scroll {
+  max-height: 55vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.pastday-section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  margin: 16px 0 4px;
+}
+.pastday-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.pastday-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  color: var(--text);
+}
+.pastday-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.pastday-row.disabled .pastday-label {
+  color: var(--text-muted);
+}
+
+/* ===== Done group (Today) ===== */
+.done-row,
+.done-row:active {
+  cursor: default;
+}
+.done-reset {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}

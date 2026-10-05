@@ -1,16 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
 import { Square, ChevronDown, ChevronRight, Sparkles, CalendarDays } from 'lucide-react';
 import CalendarPopover from '../components/CalendarPopover';
+import PastDaySheet from '../components/PastDaySheet';
+import DoneHabits from '../components/DoneHabits';
 import DailyNote from '../components/DailyNote';
 import TopPriorities from '../components/TopPriorities';
 import NotesWidget from '../components/NotesWidget';
 import { localDateKey, monthKeyOf, officeCountForMonth } from '../lib/officeDays';
 
-// "New day" jumps to the actual current day, as before. The small calendar
-// button beside it lets you begin a different day instead — handy for
-// catching up on days the app wasn't opened. It only goes forward from the day
-// the app is on, up to today.
-function NewDayButton({ onBeginNewDay, currentDate }) {
+// "New day" jumps to the actual current day. The small calendar button beside
+// it opens any of the last two weeks (matching the daily history that's kept)
+// so you can see that day's full list and tick things off — nothing resets.
+function NewDayButton({ onBeginNewDay, onLogPastDay, currentDate }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
 
@@ -22,20 +23,19 @@ function NewDayButton({ onBeginNewDay, currentDate }) {
     return () => document.removeEventListener('click', onDocClick);
   }, []);
 
-  const dayAfter = new Date(currentDate);
-  dayAfter.setDate(dayAfter.getDate() + 1);
-  const minDate = localDateKey(dayAfter.toISOString());
+  const currentKey = localDateKey(currentDate);
   const maxDate = localDateKey(new Date().toISOString());
-  const canPick = minDate <= maxDate;
+  const earliest = new Date();
+  earliest.setDate(earliest.getDate() - 13); // daily history keeps about two weeks
+  const minDate = localDateKey(earliest.toISOString());
 
   return (
     <span className="new-day-wrap" ref={wrapRef}>
       <button className="btn new-day-main" onClick={() => onBeginNewDay()}>New day</button>
       <button
         className="btn new-day-pick"
-        disabled={!canPick}
-        title={canPick ? 'Begin a different day…' : "Already on today's date"}
-        aria-label="Begin a different day"
+        title="Look back at a day…"
+        aria-label="Look back at a day"
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
       >
         <CalendarDays size={14} />
@@ -44,8 +44,9 @@ function NewDayButton({ onBeginNewDay, currentDate }) {
         <CalendarPopover
           minDate={minDate}
           maxDate={maxDate}
-          caption="Begin the new day on…"
-          onSelect={(d) => onBeginNewDay(d)}
+          caption="Look back at any of the last two weeks"
+          isDateDisabled={(d) => d === currentKey || d === maxDate}
+          onSelect={(d) => onLogPastDay(d)}
           onClose={() => setOpen(false)}
         />
       )}
@@ -104,8 +105,12 @@ export default function TodayView({
   notes, setNotes, activeNoteId, setActiveNoteId,
   dailyNoteText, setDailyNoteText, dailyNoteImage, setDailyNoteImage,
   priorityOrder, setPriorityOrder,
-  officeDays, toggleOfficeDay, currentDate,
+  officeDays, setOfficeDays, toggleOfficeDay, currentDate, weeklyHabits,
+  habitHistory, setHabitHistory,
+  weeklyGoalHistory, setWeeklyGoalHistory,
+  monthlyGoalHistory, setMonthlyGoalHistory,
 }) {
+  const [pastDate, setPastDate] = useState(null);
   const inOfficeToday = officeDays.includes(localDateKey(currentDate));
   const officeCount = officeCountForMonth(officeDays, monthKeyOf(currentDate));
 
@@ -115,6 +120,8 @@ export default function TodayView({
   // cadence brings it back around, instead of sitting there struck-through.
   const visibleHabits = habits.filter((h) => !h.completed && !(isHolidayMode && h.skipOnHoliday));
   const ungroupedHabits = visibleHabits.filter((h) => !h.groupId);
+  // Ticked-off habits sit in their own collapsed group, with when they return.
+  const doneHabits = habits.filter((h) => h.completed && !(isHolidayMode && h.skipOnHoliday));
 
   const overdueChores = chores.filter((c) => isChoreOverdue(c) && !(isHolidayMode && c.skipOnHoliday));
   const urgentTodos = todos.filter((t) => !t.completed && t.dueDate).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 3);
@@ -148,7 +155,7 @@ export default function TodayView({
             <input type="checkbox" checked={isHolidayMode} onChange={toggleHolidayMode} />
             Holiday
           </label>
-          <NewDayButton onBeginNewDay={onBeginNewDay} currentDate={currentDate} />
+          <NewDayButton onBeginNewDay={onBeginNewDay} onLogPastDay={setPastDate} currentDate={currentDate} />
         </div>
       </div>
 
@@ -245,7 +252,27 @@ export default function TodayView({
         )}
       </div>
 
+      <DoneHabits habits={doneHabits} weeklyHabits={weeklyHabits} currentDate={currentDate} setHabitCount={setHabitCount} />
+
       <NotesWidget notes={notes} setNotes={setNotes} activeNoteId={activeNoteId} setActiveNoteId={setActiveNoteId} />
+
+      {pastDate && (
+        <PastDaySheet
+          dateKey={pastDate}
+          habits={habits}
+          weeklyHabits={weeklyHabits}
+          setHabitCount={setHabitCount}
+          habitHistory={habitHistory}
+          setHabitHistory={setHabitHistory}
+          weeklyGoalHistory={weeklyGoalHistory}
+          setWeeklyGoalHistory={setWeeklyGoalHistory}
+          monthlyGoalHistory={monthlyGoalHistory}
+          setMonthlyGoalHistory={setMonthlyGoalHistory}
+          officeDays={officeDays}
+          setOfficeDays={setOfficeDays}
+          onClose={() => setPastDate(null)}
+        />
+      )}
     </div>
   );
 }
