@@ -228,8 +228,8 @@ export default function PlannerApp({ user, signOut }) {
     setChores(chores.map((c) => (c.id === id ? { ...c, lastDone: Date.now() } : c)));
   }
 
-  function isWeekendOrHoliday() {
-    const day = new Date().getDay();
+  function isWeekendOrHoliday(date = new Date()) {
+    const day = date.getDay();
     return day === 0 || day === 6 || isHolidayMode;
   }
 
@@ -260,7 +260,7 @@ export default function PlannerApp({ user, signOut }) {
   // holiday-paused tasks while on holiday, and weekend-only tasks except on
   // an actual weekend. Only tops up to 3 total — never removes anything
   // already carried over or added by hand.
-  function autoFillFocus(todosList) {
+  function autoFillFocus(todosList, onDate = new Date()) {
     let list = [...todosList];
 
     // Make sure overdue chores have a bank entry so they're eligible to be pulled in.
@@ -273,7 +273,7 @@ export default function PlannerApp({ user, signOut }) {
         }
       });
 
-    const weekendOrHoliday = isWeekendOrHoliday();
+    const weekendOrHoliday = isWeekendOrHoliday(onDate);
     const isWeekday = !weekendOrHoliday;
 
     const bankItems = list.filter(
@@ -296,9 +296,19 @@ export default function PlannerApp({ user, signOut }) {
     return list;
   }
 
-  function beginNewDay() {
+  // Normally begins the actual current day. Pass a "YYYY-MM-DD" string to
+  // begin a different day instead — for catching up after days when the app
+  // wasn't opened. It only moves forward (never before the day the app is
+  // already on, never past today), since going backwards would replay resets.
+  function beginNewDay(chosenDate) {
+    let target = new Date();
+    if (typeof chosenDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(chosenDate)) {
+      const [y, m, d] = chosenDate.split('-').map(Number);
+      target = new Date(y, m - 1, d, 12, 0, 0); // noon avoids timezone/DST edge cases
+      if (chosenDate <= localDateKey(currentDate) || chosenDate > localDateKey(new Date().toISOString())) return;
+    }
     const closingDateKey = currentDate.split('T')[0];
-    const nowIso = new Date().toISOString();
+    const nowIso = target.toISOString();
 
     // Daily habits are logged every day. Weekly/monthly goals only get a
     // history entry on the day THEIR OWN cycle closes (each can have its own
@@ -318,7 +328,7 @@ export default function PlannerApp({ user, signOut }) {
     // "every Nth occurrence" (e.g. every 2nd Thursday). On a matching day we
     // bump its occurrence counter and, if this occurrence is the trigger,
     // spawn a fresh instance — it simply doesn't appear on non-matching days.
-    const todaysWeekday = WEEKDAY_KEYS[new Date().getDay()];
+    const todaysWeekday = WEEKDAY_KEYS[target.getDay()];
     const nowMs = Date.now();
     const freshlyTriggered = [];
     const nextWeeklyHabits = weeklyHabits.map((w) => {
@@ -391,12 +401,12 @@ export default function PlannerApp({ user, signOut }) {
     }
 
     setHabits([...baseHabits, ...freshlyTriggered]);
-    setCurrentDate(new Date().toISOString());
+    setCurrentDate(nowIso);
     // Freeform priority lines: ticked-off ones clear with the day, unfinished
     // ones (and any pulled-in tasks) carry over. Office days only matter for
     // the current month.
     setPriorityOrder((prev) => prev.filter((e) => !(e.kind === 'line' && e.done)));
-    const thisMonth = monthKeyOf(new Date().toISOString());
+    const thisMonth = monthKeyOf(nowIso);
     setOfficeDays((prev) => prev.filter((d) => d.startsWith(thisMonth)));
 
     let nextTodos = todos.map((t) => (t.isFocus && t.completed ? { ...t, isFocus: false } : t));
@@ -407,7 +417,7 @@ export default function PlannerApp({ user, signOut }) {
     const fourteenDays = 14 * 24 * 60 * 60 * 1000;
     nextTodos = nextTodos.filter((t) => !(t.completed && t.completedAt && Date.now() - t.completedAt >= fourteenDays));
 
-    nextTodos = autoFillFocus(nextTodos);
+    nextTodos = autoFillFocus(nextTodos, target);
 
     setTodos(nextTodos);
   }

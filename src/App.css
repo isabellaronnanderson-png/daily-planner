@@ -1633,3 +1633,49 @@ input.todo-inline-input {
   font-size: 13px;
   color: var(--text-secondary);
 }
+
+/* ===== New day: pick a different date ===== */
+.new-day-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.new-day-wrap .new-day-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.new-day-wrap .new-day-pick {
+  border-left: none;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding-left: 9px;
+  padding-right: 9px;
+  display: inline-flex;
+  align-items: center;
+}
+.new-day-wrap .new-day-pick:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.calendar-caption {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.calendar-day:disabled {
+  color: var(--text-muted);
+  opacity: 0.35;
+  cursor: default;
+}
+.calendar-day:disabled:hover {
+  background: none;
+}
+.today-date {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 10px;
+}
+.today-date.stale {
+  color: var(--red-light);
+}

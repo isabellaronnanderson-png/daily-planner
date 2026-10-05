@@ -7,8 +7,15 @@ function toDateStr(y, m, d) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-export default function CalendarPopover({ value, onSelect, onClear, onClose }) {
-  const initial = value ? new Date(value + 'T00:00:00') : new Date();
+// minDate / maxDate ("YYYY-MM-DD", both optional) grey out days outside the
+// allowed range; caption is an optional small heading; onClear is optional
+// (the "Clear" link only appears when there's a value AND a way to clear it).
+export default function CalendarPopover({ value, onSelect, onClear, onClose, minDate, maxDate, caption }) {
+  const initial = value
+    ? new Date(value + 'T00:00:00')
+    : maxDate
+    ? new Date(maxDate + 'T00:00:00')
+    : new Date();
   const [viewYear, setViewYear] = useState(initial.getFullYear());
   const [viewMonth, setViewMonth] = useState(initial.getMonth());
 
@@ -29,6 +36,7 @@ export default function CalendarPopover({ value, onSelect, onClear, onClose }) {
 
   return (
     <div className="calendar-popover" onClick={(e) => e.stopPropagation()}>
+      {caption && <div className="calendar-caption">{caption}</div>}
       <div className="calendar-nav">
         <button type="button" onClick={prevMonth} aria-label="Previous month"><ChevronLeft size={14} /></button>
         <span>{monthLabel}</span>
@@ -42,10 +50,12 @@ export default function CalendarPopover({ value, onSelect, onClear, onClose }) {
           if (d === null) return <span key={i} />;
           const dateStr = toDateStr(viewYear, viewMonth, d);
           const isSelected = value === dateStr;
+          const outOfRange = (minDate && dateStr < minDate) || (maxDate && dateStr > maxDate);
           return (
             <button
               type="button"
               key={i}
+              disabled={!!outOfRange}
               className={`calendar-day ${isSelected ? 'selected' : ''}`}
               onClick={() => { onSelect(dateStr); onClose(); }}
             >
@@ -54,7 +64,7 @@ export default function CalendarPopover({ value, onSelect, onClear, onClose }) {
           );
         })}
       </div>
-      {value && (
+      {value && onClear && (
         <button type="button" className="calendar-clear" onClick={() => { onClear(); onClose(); }}>
           Clear deadline
         </button>

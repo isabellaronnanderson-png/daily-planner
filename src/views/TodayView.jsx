@@ -1,8 +1,57 @@
-import { Square, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Square, ChevronDown, ChevronRight, Sparkles, CalendarDays } from 'lucide-react';
+import CalendarPopover from '../components/CalendarPopover';
 import DailyNote from '../components/DailyNote';
 import TopPriorities from '../components/TopPriorities';
 import NotesWidget from '../components/NotesWidget';
 import { localDateKey, monthKeyOf, officeCountForMonth } from '../lib/officeDays';
+
+// "New day" jumps to the actual current day, as before. The small calendar
+// button beside it lets you begin a different day instead — handy for
+// catching up on days the app wasn't opened. It only goes forward from the day
+// the app is on, up to today.
+function NewDayButton({ onBeginNewDay, currentDate }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    function onDocClick(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, []);
+
+  const dayAfter = new Date(currentDate);
+  dayAfter.setDate(dayAfter.getDate() + 1);
+  const minDate = localDateKey(dayAfter.toISOString());
+  const maxDate = localDateKey(new Date().toISOString());
+  const canPick = minDate <= maxDate;
+
+  return (
+    <span className="new-day-wrap" ref={wrapRef}>
+      <button className="btn new-day-main" onClick={() => onBeginNewDay()}>New day</button>
+      <button
+        className="btn new-day-pick"
+        disabled={!canPick}
+        title={canPick ? 'Begin a different day…' : "Already on today's date"}
+        aria-label="Begin a different day"
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+      >
+        <CalendarDays size={14} />
+      </button>
+      {open && (
+        <CalendarPopover
+          minDate={minDate}
+          maxDate={maxDate}
+          caption="Begin the new day on…"
+          onSelect={(d) => onBeginNewDay(d)}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </span>
+  );
+}
 
 function isChoreOverdue(chore) {
   const totalGoalMs = chore.freqVal * (chore.freqUnit === 'weeks' ? 7 : chore.freqUnit === 'months' ? 30 : 1) * 24 * 60 * 60 * 1000;
@@ -84,7 +133,12 @@ export default function TodayView({
       />
 
       <div className="section-row">
-        <h2 className="section-title">Today</h2>
+        <h2 className="section-title">
+          Today
+          <span className={`today-date ${localDateKey(currentDate) !== localDateKey(new Date().toISOString()) ? 'stale' : ''}`}>
+            {new Date(currentDate).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
+          </span>
+        </h2>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <label className="toggle-pill">
             <input type="checkbox" checked={inOfficeToday} onChange={toggleOfficeDay} />
@@ -94,7 +148,7 @@ export default function TodayView({
             <input type="checkbox" checked={isHolidayMode} onChange={toggleHolidayMode} />
             Holiday
           </label>
-          <button className="btn" onClick={onBeginNewDay}>New day</button>
+          <NewDayButton onBeginNewDay={onBeginNewDay} currentDate={currentDate} />
         </div>
       </div>
 
