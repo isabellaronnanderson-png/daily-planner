@@ -40,7 +40,7 @@ function DeadlineButton({ dueDate, onSelect, onClear }) {
   );
 }
 
-function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, insertAfter, focusPrevious, inputRefs }) {
+function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, insertAfter, focusPrevious, inputRefs, onFocusRow, onBlurRow }) {
   function handleKeyDown(e) {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -68,6 +68,8 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
           value={todo.name}
           onChange={(e) => updateName(todo.id, e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={() => onFocusRow(todo.id)}
+          onBlur={() => onBlurRow(todo.id)}
         />
         {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
         {todo.isFocus && <span className="pill pill-muted">In Today</span>}
@@ -90,9 +92,22 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
   );
 }
 
-function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, insertAfter, appendBlank }) {
+function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, appendBlank }) {
   const inputRefs = useRef({});
   const pendingFocusId = useRef(null);
+  // The row currently being typed in stays put, so clearing a task's text to
+  // retype it doesn't make it jump to the bottom mid-edit.
+  const [editingId, setEditingId] = useState(null);
+
+  // Display order: Today items first, then everything else, then blank slots.
+  // Within each group the saved order is kept (so Today items match the
+  // order on the Today tab). This is display-only — stored order is untouched.
+  const isBlank = (t) => t.name.trim() === '' && t.id !== editingId;
+  const groupOf = (t) => (isBlank(t) ? 2 : t.isFocus ? 0 : 1);
+  const sorted = items
+    .map((t, i) => ({ t, i }))
+    .sort((a, b) => groupOf(a.t) - groupOf(b.t) || a.i - b.i)
+    .map(({ t }) => t);
 
   // Always keep exactly one blank row at the end, ready to type into —
   // like a notes app rather than a form you have to submit.
@@ -109,25 +124,42 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
     }
   }, [items]);
 
-  function handleInsertAfter(afterId) {
-    const newId = insertAfter(afterId);
-    pendingFocusId.current = newId;
+  // Enter jumps to the blank slot at the bottom (creating one if needed),
+  // since blanks always live there now.
+  function handleInsertAfter() {
+    const blank = items.find((t) => t.name.trim() === '' && t.id !== editingId);
+    if (blank) {
+      inputRefs.current[blank.id]?.focus();
+    } else {
+      pendingFocusId.current = appendBlank();
+    }
   }
 
   function handleFocusPrevious(id) {
     pendingFocusId.current = id;
   }
 
+  function handleBlurRow(id) {
+    setEditingId((cur) => (cur === id ? null : cur));
+    // Tidy up: if a task was emptied out and there's already a blank slot,
+    // drop the extra one rather than leaving two blanks.
+    const row = items.find((t) => t.id === id);
+    if (row && row.name.trim() === '') {
+      const otherBlanks = items.filter((t) => t.id !== id && t.name.trim() === '');
+      if (otherBlanks.length > 0) deleteTodo(id);
+    }
+  }
+
   return (
     <div className="bank-box">
       <h3 className="section-title" style={{ marginBottom: 10 }}>{title}</h3>
       <div className="bank-list">
-        {items.map((todo, i) => (
+        {sorted.map((todo, i) => (
           <TodoRow
             key={todo.id}
             todo={todo}
             index={i}
-            items={items}
+            items={sorted}
             toggleTodo={toggleTodo}
             updateName={updateName}
             setDueDate={setDueDate}
@@ -140,6 +172,8 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
             insertAfter={handleInsertAfter}
             focusPrevious={handleFocusPrevious}
             inputRefs={inputRefs}
+            onFocusRow={setEditingId}
+            onBlurRow={handleBlurRow}
           />
         ))}
       </div>
@@ -167,18 +201,8 @@ export default function TodoView({
   }
 
   function appendBlank(isWork) {
-    setTodos((prev) => [...prev, blankTodo(isWork)]);
-  }
-
-  function insertAfter(afterId, isWork) {
     const newTodo = blankTodo(isWork);
-    setTodos((prev) => {
-      const idx = prev.findIndex((t) => t.id === afterId);
-      if (idx === -1) return [...prev, newTodo];
-      const next = [...prev];
-      next.splice(idx + 1, 0, newTodo);
-      return next;
-    });
+    setTodos((prev) => [...prev, newTodo]);
     return newTodo.id;
   }
 
@@ -215,7 +239,6 @@ export default function TodoView({
         deleteTodo={deleteTodo}
         makeFocus={makeFocus}
         removeFromFocus={removeFromFocus}
-        insertAfter={(afterId) => insertAfter(afterId, false)}
         appendBlank={() => appendBlank(false)}
       />
 
@@ -231,7 +254,6 @@ export default function TodoView({
         deleteTodo={deleteTodo}
         makeFocus={makeFocus}
         removeFromFocus={removeFromFocus}
-        insertAfter={(afterId) => insertAfter(afterId, true)}
         appendBlank={() => appendBlank(true)}
       />
     </div>
