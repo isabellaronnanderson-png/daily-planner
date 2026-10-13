@@ -64,6 +64,12 @@ export default function PlannerApp({ user, signOut }) {
   const [todos, setTodos] = useLocalStorage('planner_todos', DEFAULT_TODOS);
   const [isHolidayMode, setIsHolidayMode] = useLocalStorage('planner_holiday_mode', false);
   const [holidayStartedAt, setHolidayStartedAt] = useLocalStorage('planner_holiday_started_at', null);
+  // Whether the day currently open was begun as a holiday. Holiday mode is
+  // "sticky": switching it off mid-day doesn't un-pause today — it takes
+  // effect when you next begin a new day, so the day you were away for stays
+  // recorded as a holiday in your insights.
+  const [dayIsHoliday, setDayIsHoliday] = useLocalStorage('planner_day_is_holiday', false);
+  const holidayActive = isHolidayMode || dayIsHoliday;
   const [scratchpad, setScratchpad] = useLocalStorage('planner_scratchpad', '');
   const [notes, setNotes] = useLocalStorage('planner_notes', []);
   const [activeNoteId, setActiveNoteId] = useLocalStorage('planner_active_note_id', null);
@@ -81,7 +87,7 @@ export default function PlannerApp({ user, signOut }) {
   const appState = {
     tabOrder, coverImage, coverPosition, currentDate, title,
     habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, weeklyHabits, groups,
-    todoSectionCollapsed, todos, isHolidayMode, holidayStartedAt,
+    todoSectionCollapsed, todos, isHolidayMode, holidayStartedAt, dayIsHoliday,
     scratchpad, notes, activeNoteId, dailyNoteText, dailyNoteImage, chores, officeDays, priorityOrder,
   };
 
@@ -105,6 +111,7 @@ export default function PlannerApp({ user, signOut }) {
     if (data.todos !== undefined) setTodos(data.todos);
     if (data.isHolidayMode !== undefined) setIsHolidayMode(data.isHolidayMode);
     if (data.holidayStartedAt !== undefined) setHolidayStartedAt(data.holidayStartedAt);
+    if (data.dayIsHoliday !== undefined) setDayIsHoliday(data.dayIsHoliday);
     if (data.scratchpad !== undefined) setScratchpad(data.scratchpad);
     if (data.notes !== undefined) setNotes(data.notes);
     if (data.activeNoteId !== undefined) setActiveNoteId(data.activeNoteId);
@@ -206,9 +213,9 @@ export default function PlannerApp({ user, signOut }) {
     setChores(chores.map((c) => (c.id === id ? { ...c, lastDone: Date.now() } : c)));
   }
 
-  function isWeekendOrHoliday(date = new Date()) {
+  function isWeekendOrHoliday(date = new Date(), holiday = holidayActive) {
     const day = date.getDay();
-    return day === 0 || day === 6 || isHolidayMode;
+    return day === 0 || day === 6 || holiday;
   }
 
   function isChoreOverdueLocal(chore) {
@@ -238,12 +245,12 @@ export default function PlannerApp({ user, signOut }) {
   // holiday-paused tasks while on holiday, and weekend-only tasks except on
   // an actual weekend. Only tops up to 3 total — never removes anything
   // already carried over or added by hand.
-  function autoFillFocus(todosList, onDate = new Date()) {
+  function autoFillFocus(todosList, onDate = new Date(), holiday = holidayActive, choresList = chores) {
     let list = [...todosList];
 
     // Make sure overdue chores have a bank entry so they're eligible to be pulled in.
-    chores
-      .filter((c) => isChoreOverdueLocal(c) && !(isHolidayMode && c.skipOnHoliday))
+    choresList
+      .filter((c) => isChoreOverdueLocal(c) && !(holiday && c.skipOnHoliday))
       .forEach((chore) => {
         const existing = list.find((t) => t.choreId === chore.id && !t.completed);
         if (!existing) {
@@ -251,11 +258,11 @@ export default function PlannerApp({ user, signOut }) {
         }
       });
 
-    const weekendOrHoliday = isWeekendOrHoliday(onDate);
+    const weekendOrHoliday = isWeekendOrHoliday(onDate, holiday);
     const isWeekday = !weekendOrHoliday;
 
     const bankItems = list.filter(
-      (t) => t.name.trim() && !t.isFocus && !t.completed && !t.longTerm && !(isHolidayMode && t.skipOnHoliday) && !(t.weekendOnly && !weekendOrHoliday)
+      (t) => t.name.trim() && !t.isFocus && !t.completed && !t.longTerm && !(holiday && t.skipOnHoliday) && !(t.weekendOnly && !weekendOrHoliday)
     );
 
     const withDeadline = bankItems.filter((t) => t.dueDate).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
@@ -285,13 +292,18 @@ export default function PlannerApp({ user, signOut }) {
     // so consistency reflects "how often the whole cycle got done" rather
     // than punishing every day it wasn't finished yet.
     const toSnapshotItem = (h) => ({ name: h.name, completed: h.completed, count: h.count || 0, target: h.targetCount || 1 });
-    const notPaused = (h) => !(isHolidayMode && h.skipOnHoliday);
+    // The day being closed uses whether IT was a holiday (sticky), not the
+    // toggle's current position — so unticking Holiday before pressing New
+    // day doesn't bring yesterday's paused habits back into its record.
+    const notPaused = (h) => !(holidayActive && h.skipOnHoliday);
 
     // Day-specific habits that were due that day are part of the day's record too.
     // daySpecificTracked marks this as the full record, so a habit that's absent
     // from it is known not to have been due.
     const dailySnapshot = habits.filter((h) => notPaused(h) && h.cadence !== 'week' && h.cadence !== 'month').map(toSnapshotItem);
-    setHabitHistory([{ date: closingDateKey, snapshot: dailySnapshot, daySpecificTracked: true }, ...habitHistory].slice(0, 14));
+    const closingEntry = { date: closingDateKey, snapshot: dailySnapshot, daySpecificTracked: true };
+    if (holidayActive) closingEntry.holiday = true;
+    setHabitHistory([closingEntry, ...habitHistory].slice(0, 14));
 
     const weeklyClosing = [];
     const monthlyClosing = [];
@@ -389,7 +401,19 @@ export default function PlannerApp({ user, signOut }) {
     const fourteenDays = 14 * 24 * 60 * 60 * 1000;
     nextTodos = nextTodos.filter((t) => !(t.completed && t.completedAt && Date.now() - t.completedAt >= fourteenDays));
 
-    nextTodos = autoFillFocus(nextTodos, target);
+    // The new day takes the toggle's current position. If the holiday has
+    // just ended, chores that were paused get their clocks shifted forward
+    // by however long it lasted, so they don't all come due at once.
+    let nextChores = chores;
+    if (!isHolidayMode && holidayStartedAt) {
+      const pausedMs = Date.now() - holidayStartedAt;
+      nextChores = chores.map((c) => (c.skipOnHoliday ? { ...c, lastDone: c.lastDone + pausedMs } : c));
+      setChores(nextChores);
+      setHolidayStartedAt(null);
+    }
+    setDayIsHoliday(isHolidayMode);
+
+    nextTodos = autoFillFocus(nextTodos, target, isHolidayMode, nextChores);
 
     setTodos(nextTodos);
   }
@@ -628,15 +652,17 @@ export default function PlannerApp({ user, signOut }) {
     setIsHolidayMode(next);
     if (next) {
       setTodos(todos.map((t) => (t.isFocus && t.skipOnHoliday ? { ...t, isFocus: false } : t)));
-      setHolidayStartedAt(Date.now());
-    } else if (holidayStartedAt) {
-      // Shift paused chores' clocks forward by however long the holiday
-      // lasted, so returning doesn't dump a false backlog of overdue chores.
+      if (!holidayStartedAt) setHolidayStartedAt(Date.now());
+    } else if (!dayIsHoliday && holidayStartedAt) {
+      // Holiday was only switched on during today (e.g. by mistake), so
+      // switching it off undoes it straight away. If today was begun as a
+      // holiday, it stays one until the next New day instead — see beginNewDay.
       const pausedMs = Date.now() - holidayStartedAt;
       setChores((prev) => prev.map((c) => (c.skipOnHoliday ? { ...c, lastDone: c.lastDone + pausedMs } : c)));
       setHolidayStartedAt(null);
     }
   }
+
 
   return (
     <div className="app">
@@ -672,7 +698,9 @@ export default function PlannerApp({ user, signOut }) {
           removeFromFocus={removeFromFocus}
           makeFocus={makeFocus}
           focusChore={focusChore}
-          isHolidayMode={isHolidayMode}
+          isHolidayMode={holidayActive}
+          holidayModeOn={isHolidayMode}
+          holidayEndsAtNewDay={dayIsHoliday && !isHolidayMode}
           toggleHolidayMode={toggleHolidayMode}
           chores={chores}
           resetChore={resetChore}
@@ -734,7 +762,7 @@ export default function PlannerApp({ user, signOut }) {
         />
       )}
       {activeTab === 'chores' && (
-        <ChoresView chores={chores} setChores={setChores} resetChore={resetChore} isHolidayMode={isHolidayMode} />
+        <ChoresView chores={chores} setChores={setChores} resetChore={resetChore} isHolidayMode={holidayActive} />
       )}
       {activeTab === 'insights' && (
         <InsightsView

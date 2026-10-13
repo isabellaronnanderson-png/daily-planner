@@ -1,5 +1,5 @@
 import { Check, Square, X } from 'lucide-react';
-import { noonIso, dailyRowsFor, setDailyCount, locateGoal, goalState, setClosedGoalCount } from '../lib/pastDay';
+import { noonIso, dailyRowsFor, setDailyCount, locateGoal, goalState, setClosedGoalCount, isHolidayDay, setDayHoliday } from '../lib/pastDay';
 
 // One tickable row: a single checkbox, or numbered marks for "N times" habits.
 function LogRow({ label, hint, count, target, disabled, onSet }) {
@@ -53,6 +53,8 @@ export default function PastDaySheet({
   const setRow = (r, n) => setHabitHistory((prev) => setDailyCount(prev, habits, dateKey, r.name, n, weeklyHabits));
   const goals = habits.filter((h) => h.cadence === 'week' || h.cadence === 'month');
   const inOffice = officeDays.includes(dateKey);
+  const wasHoliday = isHolidayDay(habitHistory, dateKey);
+  const toggleHoliday = () => setHabitHistory((prev) => setDayHoliday(prev, habits, dateKey, !wasHoliday, weeklyHabits));
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -64,6 +66,14 @@ export default function PastDaySheet({
         <p className="pastday-intro">Log what you did that day. This doesn't change today's list.</p>
 
         <div className="pastday-scroll">
+          <LogRow
+            label="Holiday"
+            hint="Leaves out habits set to pause on holiday"
+            count={wasHoliday ? 1 : 0}
+            target={1}
+            onSet={toggleHoliday}
+          />
+
           <div className="pastday-section-title">
             Habits{dailyRows.length > 0 && ` · ${doneOf(dailyRows)} of ${dailyRows.length} done`}
           </div>

@@ -100,7 +100,7 @@ export default function TodayView({
   groups, toggleGroupCollapsed,
   onBeginNewDay,
   todos, toggleTodo, removeFromFocus, makeFocus, focusChore,
-  isHolidayMode, toggleHolidayMode,
+  isHolidayMode, holidayModeOn, holidayEndsAtNewDay, toggleHolidayMode,
   chores, resetChore,
   notes, setNotes, activeNoteId, setActiveNoteId,
   dailyNoteText, setDailyNoteText, dailyNoteImage, setDailyNoteImage,
@@ -151,9 +151,12 @@ export default function TodayView({
             <input type="checkbox" checked={inOfficeToday} onChange={toggleOfficeDay} />
             In office · {officeCount}
           </label>
-          <label className="toggle-pill">
-            <input type="checkbox" checked={isHolidayMode} onChange={toggleHolidayMode} />
-            Holiday
+          <label
+            className="toggle-pill"
+            title={holidayEndsAtNewDay ? 'Today still counts as a holiday — this switches off when you begin a new day' : undefined}
+          >
+            <input type="checkbox" checked={holidayModeOn} onChange={toggleHolidayMode} />
+            {holidayEndsAtNewDay ? 'Holiday · ends at new day' : 'Holiday'}
           </label>
           <NewDayButton onBeginNewDay={onBeginNewDay} onLogPastDay={setPastDate} currentDate={currentDate} />
         </div>

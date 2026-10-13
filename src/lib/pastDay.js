@@ -61,7 +61,12 @@ export function dailyRowsFor(habitHistory, habits, dateKey, weeklyHabits = []) {
       daySpecific: dsNames.has(it.name),
     }));
     if (entry.daySpecificTracked) return rows;
-    return [...rows, ...derivedDaySpecificRows(weeklyHabits, dateKey, new Set(rows.map((r) => r.name)))];
+    let derived = derivedDaySpecificRows(weeklyHabits, dateKey, new Set(rows.map((r) => r.name)));
+    if (entry.holiday) {
+      const paused = new Set((weeklyHabits || []).filter((w) => w.skipOnHoliday).map((w) => w.name));
+      derived = derived.filter((r) => !paused.has(r.name));
+    }
+    return [...rows, ...derived];
   }
   const base = habits
     .filter(isDailyHabit)
@@ -83,6 +88,45 @@ export function setDailyCount(prevHistory, habits, dateKey, name, newCount, week
     .map((r) => ({ name: r.name, completed: r.completed, count: r.count, target: r.target }));
   const entry = { date: dateKey, snapshot };
   if (existing && existing.daySpecificTracked) entry.daySpecificTracked = true;
+  if (existing && existing.holiday) entry.holiday = true;
+  const others = prevHistory.filter((e) => e.date !== dateKey);
+  return [entry, ...others].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 14);
+}
+
+// Marks a past day as a holiday (or not). On: habits set to pause on holiday
+// are dropped from that day's record, so they don't count against you. Off:
+// they're added back, unticked, so you can log them.
+export function isHolidayDay(habitHistory, dateKey) {
+  return !!habitHistory.find((e) => e.date === dateKey)?.holiday;
+}
+
+export function setDayHoliday(prevHistory, habits, dateKey, on, weeklyHabits = []) {
+  const existing = prevHistory.find((e) => e.date === dateKey);
+  const pausedDaily = habits.filter((h) => isDailyHabit(h) && h.skipOnHoliday);
+  const pausedNames = new Set([
+    ...pausedDaily.map((h) => h.name),
+    ...(weeklyHabits || []).filter((w) => w.skipOnHoliday).map((w) => w.name),
+  ]);
+
+  let rows = dailyRowsFor(prevHistory, habits, dateKey, weeklyHabits);
+  if (on) {
+    rows = rows.filter((r) => !pausedNames.has(r.name));
+  } else {
+    const have = new Set(rows.map((r) => r.name));
+    const backDaily = pausedDaily
+      .filter((h) => existedOn(h.id, dateKey) && !have.has(h.name))
+      .map((h) => ({ name: h.name, count: 0, target: h.targetCount || 1, completed: false }));
+    const backDaySpecific = derivedDaySpecificRows(weeklyHabits, dateKey, have)
+      .filter((r) => pausedNames.has(r.name) && !r.uncertain);
+    rows = [...rows, ...backDaily, ...backDaySpecific];
+  }
+
+  const snapshot = rows
+    .filter((r) => !(r.derived && r.uncertain && r.count === 0))
+    .map((r) => ({ name: r.name, completed: r.completed, count: r.count, target: r.target }));
+  const entry = { date: dateKey, snapshot };
+  if (existing && existing.daySpecificTracked) entry.daySpecificTracked = true;
+  if (on) entry.holiday = true;
   const others = prevHistory.filter((e) => e.date !== dateKey);
   return [entry, ...others].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 14);
 }
