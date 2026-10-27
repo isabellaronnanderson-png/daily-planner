@@ -21,40 +21,47 @@ export default function TopPriorities({ focusItems, toggleTodo, removeFromFocus,
   const focusById = {};
   focusItems.forEach((t) => { focusById[t.id] = t; });
 
-  // Self-heal: a newly-focused todo gets its own row (inserted just above any
-  // trailing blank lines), and a row whose todo is no longer focused is
-  // dropped — so this stays in sync with the To-do tab without extra wiring.
+  const isBlankLine = (e) => e.kind === 'line' && e.text.trim() === '';
+  const focusKey = focusItems.map((t) => t.id).join(',');
+
+  // Self-heal: a newly-focused todo gets its own row, and a row whose todo is
+  // no longer focused is dropped — so this stays in sync with the To-do tab
+  // without extra wiring. When something is pulled in, empty lines are cleared
+  // away so the box only shows rows with something in them; "+ Add line"
+  // brings a blank back whenever you want one.
+  const firstRun = useRef(true);
   useEffect(() => {
-    // Only the trailing run of blanks is "padding" that can be repositioned —
-    // a blank placed mid-list on purpose (via Enter) stays exactly there.
-    let splitIdx = priorityOrder.length;
-    while (splitIdx > 0 && priorityOrder[splitIdx - 1].kind === 'line' && priorityOrder[splitIdx - 1].text.trim() === '') {
-      splitIdx -= 1;
-    }
-    const body = priorityOrder.slice(0, splitIdx);
-    const trailingBlanks = priorityOrder.slice(splitIdx);
-
-    const cleanedBody = body.filter((e) => e.kind === 'line' || focusById[e.todoId]);
-    const known = new Set(cleanedBody.filter((e) => e.kind === 'todo').map((e) => e.todoId));
-    const missing = focusItems.filter((t) => !known.has(t.id)).map((t) => ({ kind: 'todo', todoId: t.id }));
-
-    if (missing.length > 0 || cleanedBody.length !== body.length) {
-      setPriorityOrder([...cleanedBody, ...missing, ...trailingBlanks]);
-    }
+    const wasFirstRun = firstRun.current;
+    firstRun.current = false;
+    setPriorityOrder((prev) => {
+      const cleaned = prev.filter((e) => e.kind === 'line' || focusById[e.todoId]);
+      const known = new Set(cleaned.filter((e) => e.kind === 'todo').map((e) => e.todoId));
+      const missing = focusItems.filter((t) => !known.has(t.id)).map((t) => ({ kind: 'todo', todoId: t.id }));
+      // On load, also tidy leftover empty lines if tasks are already in the box.
+      const hasTodos = cleaned.some((e) => e.kind === 'todo') || missing.length > 0;
+      const dropBlanks = missing.length > 0 || (wasFirstRun && hasTodos);
+      const base = dropBlanks ? cleaned.filter((e) => !isBlankLine(e)) : cleaned;
+      if (missing.length === 0 && base.length === prev.length) return prev;
+      return [...base, ...missing];
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusItems.map((t) => t.id).join(',')]);
+  }, [focusKey]);
 
-  // Keep at least 3 rows total by default — pad with blank lines up to 3.
-  // Once you're at 3 or more, no forced blank appears; use "+ Add line" for more.
+  // With nothing pulled in, keep 3 empty slots ready to write in. Once any
+  // task from the To-do tab is in the box, no padding is added — it would just
+  // look cluttered. You can still add lines with "+ Add line" or Enter.
   useEffect(() => {
-    const filledCount = priorityOrder.filter((e) => e.kind === 'todo' || (e.kind === 'line' && e.text.trim() !== '')).length;
-    const blankCount = priorityOrder.filter((e) => e.kind === 'line' && e.text.trim() === '').length;
-    const needed = Math.max(0, 3 - filledCount) - blankCount;
-    if (needed > 0) {
-      setPriorityOrder([...priorityOrder, ...Array.from({ length: needed }, makeBlankLine)]);
-    }
+    if (focusItems.length > 0) return;
+    setPriorityOrder((prev) => {
+      if (prev.some((e) => e.kind === 'todo')) return prev;
+      const filledCount = prev.filter((e) => e.kind === 'line' && e.text.trim() !== '').length;
+      const blankCount = prev.filter(isBlankLine).length;
+      const needed = Math.max(0, 3 - filledCount) - blankCount;
+      if (needed <= 0) return prev;
+      return [...prev, ...Array.from({ length: needed }, makeBlankLine)];
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priorityOrder]);
+  }, [priorityOrder, focusKey]);
 
   useEffect(() => {
     if (pendingFocusKey.current && inputRefs.current[pendingFocusKey.current]) {
