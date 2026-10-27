@@ -395,7 +395,17 @@ export default function PlannerApp({ user, signOut }) {
 
     let nextTodos = todos.map((t) => (t.isFocus && t.completed ? { ...t, isFocus: false } : t));
     if (isHolidayMode) {
-      nextTodos = nextTodos.map((t) => (t.isFocus && t.skipOnHoliday ? { ...t, isFocus: false } : t));
+      // Tasks (and chore reminders) set to pause on holiday don't carry over.
+      const pausedChoreIds = new Set(chores.filter((c) => c.skipOnHoliday).map((c) => c.id));
+      nextTodos = nextTodos.map((t) =>
+        t.isFocus && (t.skipOnHoliday || (t.choreId && pausedChoreIds.has(t.choreId))) ? { ...t, isFocus: false } : t
+      );
+    }
+    // Weekend-only tasks only carry over into a weekend (or holiday) day.
+    // Anything still in Today from before drops back to the list on a weekday
+    // and will be pulled in again when the next weekend comes round.
+    if (!isWeekendOrHoliday(target, isHolidayMode)) {
+      nextTodos = nextTodos.map((t) => (t.isFocus && t.weekendOnly ? { ...t, isFocus: false } : t));
     }
 
     const fourteenDays = 14 * 24 * 60 * 60 * 1000;

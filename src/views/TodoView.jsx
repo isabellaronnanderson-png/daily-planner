@@ -92,7 +92,7 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
   );
 }
 
-function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, appendBlank }) {
+function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, appendBlank, ensureBlank }) {
   const inputRefs = useRef({});
   const pendingFocusId = useRef(null);
   // The row currently being typed in stays put, so clearing a task's text to
@@ -109,13 +109,21 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
     .sort((a, b) => groupOf(a.t) - groupOf(b.t) || a.i - b.i)
     .map(({ t }) => t);
 
-  // Always keep exactly one blank row at the end, ready to type into —
-  // like a notes app rather than a form you have to submit.
+  // Always keep a blank row at the bottom, ready to type into — like a notes
+  // app rather than a form you have to submit. The moment you start typing in
+  // the last blank slot, a fresh one appears underneath it.
+  const hasBlank = items.some((t) => t.name.trim() === '');
   useEffect(() => {
-    const hasBlank = items.some((t) => t.name.trim() === '');
-    if (!hasBlank) appendBlank();
+    if (!hasBlank) ensureBlank();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length]);
+  }, [hasBlank]);
+
+  // Remembers which rows have ever held text, so that tidy-up (below) only
+  // removes a row you emptied out — never a blank slot you made on purpose.
+  const everHadText = useRef(new Set());
+  useEffect(() => {
+    items.forEach((t) => { if (t.name.trim()) everHadText.current.add(t.id); });
+  }, [items]);
 
   useEffect(() => {
     if (pendingFocusId.current && inputRefs.current[pendingFocusId.current]) {
@@ -124,15 +132,10 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
     }
   }, [items]);
 
-  // Enter jumps to the blank slot at the bottom (creating one if needed),
-  // since blanks always live there now.
+  // Enter always makes one more blank slot (at the bottom) and jumps to it,
+  // so you can line up several if you want to.
   function handleInsertAfter() {
-    const blank = items.find((t) => t.name.trim() === '' && t.id !== editingId);
-    if (blank) {
-      inputRefs.current[blank.id]?.focus();
-    } else {
-      pendingFocusId.current = appendBlank();
-    }
+    pendingFocusId.current = appendBlank();
   }
 
   function handleFocusPrevious(id) {
@@ -141,10 +144,11 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
 
   function handleBlurRow(id) {
     setEditingId((cur) => (cur === id ? null : cur));
-    // Tidy up: if a task was emptied out and there's already a blank slot,
-    // drop the extra one rather than leaving two blanks.
+    // Tidy up: if a task was emptied out and there's already another blank
+    // slot, drop the emptied row rather than leaving a stray gap. Blank slots
+    // you created with Enter and haven't typed in are left alone.
     const row = items.find((t) => t.id === id);
-    if (row && row.name.trim() === '') {
+    if (row && row.name.trim() === '' && everHadText.current.has(id)) {
       const otherBlanks = items.filter((t) => t.id !== id && t.name.trim() === '');
       if (otherBlanks.length > 0) deleteTodo(id);
     }
@@ -206,6 +210,15 @@ export default function TodoView({
     return newTodo.id;
   }
 
+  // Adds a blank row only if this list doesn't already have one. Checking
+  // inside the state update means a double call can never create two.
+  function ensureBlank(isWork) {
+    setTodos((prev) => {
+      const has = prev.some((t) => !t.completed && !!t.isWork === isWork && t.name.trim() === '');
+      return has ? prev : [...prev, blankTodo(isWork)];
+    });
+  }
+
   function updateName(id, name) {
     setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, name } : t)));
   }
@@ -240,6 +253,7 @@ export default function TodoView({
         makeFocus={makeFocus}
         removeFromFocus={removeFromFocus}
         appendBlank={() => appendBlank(false)}
+        ensureBlank={() => ensureBlank(false)}
       />
 
       <TodoSection
@@ -255,6 +269,7 @@ export default function TodoView({
         makeFocus={makeFocus}
         removeFromFocus={removeFromFocus}
         appendBlank={() => appendBlank(true)}
+        ensureBlank={() => ensureBlank(true)}
       />
     </div>
   );
