@@ -9,6 +9,8 @@ import ChoresView from './views/ChoresView';
 import InsightsView from './views/InsightsView';
 import { localDateKey, monthKeyOf } from './lib/officeDays';
 import { weekKeyFor, monthIndexFor, daysBetween } from './lib/cycles';
+import { DEFAULT_TODO_CATEGORIES, defaultCategory } from './lib/todoCategories';
+import { descendantIds } from './lib/groupTree';
 import './App.css';
 
 const DEFAULT_TAB_ORDER = ['habits', 'manage', 'todo', 'chores', 'insights'];
@@ -78,7 +80,15 @@ export default function PlannerApp({ user, signOut }) {
 
   const [chores, setChores] = useLocalStorage('planner_chores', DEFAULT_CHORES);
   const [officeDays, setOfficeDays] = useLocalStorage('planner_office_days', []);
+  // Old "daily priorities" box contents — only read once, to carry any lines
+  // you'd typed into the new priorities field on the daily note.
   const [priorityOrder, setPriorityOrder] = useLocalStorage('planner_priority_order', []);
+  // Up to three hand-written priorities, shown on the daily note.
+  const [dailyPriorities, setDailyPriorities] = useLocalStorage('planner_daily_priorities', []);
+  // "Just today" lines under the habit list — cleared on New day, never in Insights.
+  const [todayLines, setTodayLines] = useLocalStorage('planner_today_lines', []);
+  // To-do lists (tabs) and their sections.
+  const [todoCategories, setTodoCategories] = useLocalStorage('planner_todo_categories', DEFAULT_TODO_CATEGORIES);
 
   const safeTabOrder = [...tabOrder, ...DEFAULT_TAB_ORDER.filter((k) => !tabOrder.includes(k))].filter((k) => k !== 'weekend' && k !== 'schedule');
 
@@ -89,6 +99,7 @@ export default function PlannerApp({ user, signOut }) {
     habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, weeklyHabits, groups,
     todoSectionCollapsed, todos, isHolidayMode, holidayStartedAt, dayIsHoliday,
     scratchpad, notes, activeNoteId, dailyNoteText, dailyNoteImage, chores, officeDays, priorityOrder,
+    dailyPriorities, todayLines, todoCategories,
   };
 
   // Applies a full state blob (from the cloud or a restored backup file) —
@@ -120,6 +131,9 @@ export default function PlannerApp({ user, signOut }) {
     if (data.chores !== undefined) setChores(data.chores);
     if (data.officeDays !== undefined) setOfficeDays(data.officeDays);
     if (data.priorityOrder !== undefined) setPriorityOrder(data.priorityOrder);
+    if (data.dailyPriorities !== undefined) setDailyPriorities(data.dailyPriorities);
+    if (data.todayLines !== undefined) setTodayLines(data.todayLines);
+    if (data.todoCategories !== undefined) setTodoCategories(data.todoCategories);
   }
 
   const { status: syncStatus, errorMessage: syncError } = useCloudSync(user, appState, applyFullState);
@@ -162,6 +176,22 @@ export default function PlannerApp({ user, signOut }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The old priorities box held a mix of pulled-in tasks and typed lines. The
+  // pulled-in tasks now live in the Today to-do section; any lines you'd typed
+  // move up into the daily note's priorities (first three), then this empties.
+  useEffect(() => {
+    if (priorityOrder.length === 0) return;
+    if (dailyPriorities.length === 0) {
+      const lines = priorityOrder
+        .filter((e) => e.kind === 'line' && e.text && e.text.trim())
+        .slice(0, 3)
+        .map((e) => ({ id: e.id, text: e.text.trim(), done: !!e.done }));
+      if (lines.length > 0) setDailyPriorities(lines);
+    }
+    setPriorityOrder([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priorityOrder]);
 
   // One-time migration: fold any existing separate weekend tasks into
   // day-specific habits tagged for Saturday + Sunday, then retire the old data.
@@ -210,7 +240,7 @@ export default function PlannerApp({ user, signOut }) {
   }, [habits, weeklyHabits]);
 
   function resetChore(id) {
-    setChores(chores.map((c) => (c.id === id ? { ...c, lastDone: Date.now() } : c)));
+    setChores(chores.map((c) => (c.id === id ? { ...c, lastDone: Date.now(), snoozeUntil: null } : c)));
   }
 
   function isWeekendOrHoliday(date = new Date(), holiday = holidayActive) {
@@ -248,9 +278,14 @@ export default function PlannerApp({ user, signOut }) {
   function autoFillFocus(todosList, onDate = new Date(), holiday = holidayActive, choresList = chores) {
     let list = [...todosList];
 
+    // Anything sent to "this weekend" stays out of the daily pull until then.
+    const dateKey = localDateKey(onDate.toISOString());
+    const isSnoozed = (x) => !!x.snoozeUntil && x.snoozeUntil > dateKey;
+    const choreOf = (t) => (t.choreId ? choresList.find((c) => c.id === t.choreId) : null);
+
     // Make sure overdue chores have a bank entry so they're eligible to be pulled in.
     choresList
-      .filter((c) => isChoreOverdueLocal(c) && !(holiday && c.skipOnHoliday))
+      .filter((c) => isChoreOverdueLocal(c) && !(holiday && c.skipOnHoliday) && !isSnoozed(c))
       .forEach((chore) => {
         const existing = list.find((t) => t.choreId === chore.id && !t.completed);
         if (!existing) {
@@ -262,7 +297,7 @@ export default function PlannerApp({ user, signOut }) {
     const isWeekday = !weekendOrHoliday;
 
     const bankItems = list.filter(
-      (t) => t.name.trim() && !t.isFocus && !t.completed && !t.longTerm && !(holiday && t.skipOnHoliday) && !(t.weekendOnly && !weekendOrHoliday)
+      (t) => t.name.trim() && !t.isFocus && !t.completed && !t.longTerm && !(holiday && t.skipOnHoliday) && !(t.weekendOnly && !weekendOrHoliday) && !isSnoozed(t) && !(choreOf(t) && isSnoozed(choreOf(t)))
     );
 
     const withDeadline = bankItems.filter((t) => t.dueDate).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
@@ -386,10 +421,11 @@ export default function PlannerApp({ user, signOut }) {
 
     setHabits([...baseHabits, ...freshlyTriggered]);
     setCurrentDate(nowIso);
-    // Freeform priority lines: ticked-off ones clear with the day, unfinished
-    // ones (and any pulled-in tasks) carry over. Office days only matter for
-    // the current month.
-    setPriorityOrder((prev) => prev.filter((e) => !(e.kind === 'line' && e.done)));
+    // Daily-note priorities: ticked-off ones clear with the day, unfinished
+    // ones carry over. "Just today" lines are for that day only, so they all
+    // clear. Office days only matter for the current month.
+    setDailyPriorities((prev) => prev.filter((p) => !p.done));
+    setTodayLines([]);
     const thisMonth = monthKeyOf(nowIso);
     setOfficeDays((prev) => prev.filter((d) => d.startsWith(thisMonth)));
 
@@ -568,16 +604,36 @@ export default function PlannerApp({ user, signOut }) {
   }
 
   // ---- Group actions ----
-  function addGroup(name) {
+  // parentId makes it a subgroup inside another group (null = top level).
+  function addGroup(name, parentId = null) {
     if (!name.trim()) return;
-    setGroups([...groups, { id: 'g_' + Date.now(), name: name.trim(), collapsed: false }]);
+    const newGroup = { id: 'g_' + Date.now(), name: name.trim(), collapsed: false, parentId: parentId || null };
+    setGroups((prev) => [...prev.map((g) => (g.id === parentId ? { ...g, collapsed: false } : g)), newGroup]);
   }
   function toggleGroupCollapsed(id) {
     setGroups(groups.map((g) => (g.id === id ? { ...g, collapsed: !g.collapsed } : g)));
   }
+  // Removing a group never removes what's inside it: its subgroups and habits
+  // move up into whatever it was sitting in (or to the top level / ungrouped).
   function deleteGroup(id) {
-    setGroups(groups.filter((g) => g.id !== id));
-    setHabits(habits.map((h) => (h.groupId === id ? { ...h, groupId: null } : h)));
+    const target = groups.find((g) => g.id === id);
+    if (!target) return;
+    const parent = target.parentId || null;
+    setGroups((prev) => prev.filter((g) => g.id !== id).map((g) => (g.parentId === id ? { ...g, parentId: parent } : g)));
+    setHabits((prev) => prev.map((h) => (h.groupId === id ? { ...h, groupId: parent } : h)));
+    setWeeklyHabits((prev) => prev.map((w) => (w.groupId === id ? { ...w, groupId: parent } : w)));
+  }
+  // Moves a group (with everything in it) inside another group, or back to the
+  // top level. A group can't go inside itself or one of its own subgroups.
+  function moveGroup(id, newParentId) {
+    setGroups((prev) => {
+      if (newParentId && (newParentId === id || descendantIds(prev, id).has(newParentId))) return prev;
+      return prev.map((g) => {
+        if (g.id === id) return { ...g, parentId: newParentId || null };
+        if (g.id === newParentId) return { ...g, collapsed: false };
+        return g;
+      });
+    });
   }
   function renameGroup(id, newName) {
     if (!newName.trim()) return;
@@ -623,8 +679,41 @@ export default function PlannerApp({ user, signOut }) {
     setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, weekendOnly: !t.weekendOnly } : t)));
   }
 
-  function toggleTodoIsWork(id) {
-    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, isWork: !t.isWork } : t)));
+  // Typing straight into a Today to-do line.
+  function updateTodoName(id, name) {
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, name } : t)));
+  }
+
+  // A task typed on the Today tab: a real to-do, already in Today.
+  function addFocusTodo(name) {
+    const cat = defaultCategory(todoCategories);
+    setTodos((prev) => [
+      ...prev,
+      {
+        id: 't_' + Date.now() + Math.random().toString(36).slice(2, 6),
+        name,
+        dueDate: '',
+        isFocus: true,
+        completed: false,
+        completedAt: null,
+        skipOnHoliday: false,
+        weekendOnly: false,
+        longTerm: false,
+        isWork: !!cat.isWork,
+        categoryId: cat.id,
+        subId: null,
+      },
+    ]);
+  }
+
+  // "Do this weekend": hides a chore or task from Needs attention (and from
+  // the daily pull) until the coming Saturday, when it comes back.
+  function snoozeToWeekend(kind, id) {
+    const d = new Date();
+    d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7));
+    const until = localDateKey(d.toISOString());
+    if (kind === 'chore') setChores((prev) => prev.map((c) => (c.id === id ? { ...c, snoozeUntil: until } : c)));
+    else setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, snoozeUntil: until } : t)));
   }
 
   // No hard cap — focus is now just "what I've chosen to work on today."
@@ -733,8 +822,15 @@ export default function PlannerApp({ user, signOut }) {
           setWeeklyGoalHistory={setWeeklyGoalHistory}
           monthlyGoalHistory={monthlyGoalHistory}
           setMonthlyGoalHistory={setMonthlyGoalHistory}
-          priorityOrder={priorityOrder}
-          setPriorityOrder={setPriorityOrder}
+          dailyPriorities={dailyPriorities}
+          setDailyPriorities={setDailyPriorities}
+          todayLines={todayLines}
+          setTodayLines={setTodayLines}
+          updateTodoName={updateTodoName}
+          deleteTodo={deleteTodo}
+          addFocusTodo={addFocusTodo}
+          reorderFocusTodos={reorderFocusTodos}
+          snoozeToWeekend={snoozeToWeekend}
         />
       )}
       {activeTab === 'manage' && (
@@ -750,6 +846,7 @@ export default function PlannerApp({ user, signOut }) {
           addGroup={addGroup}
           toggleGroupCollapsed={toggleGroupCollapsed}
           deleteGroup={deleteGroup}
+          moveGroup={moveGroup}
           renameGroup={renameGroup}
           reorderGroups={reorderGroups}
           weeklyHabits={weeklyHabits}
@@ -767,7 +864,8 @@ export default function PlannerApp({ user, signOut }) {
           removeFromFocus={removeFromFocus}
           toggleTodoSkipHoliday={toggleTodoSkipHoliday}
           toggleTodoWeekendOnly={toggleTodoWeekendOnly}
-          toggleTodoIsWork={toggleTodoIsWork}
+          todoCategories={todoCategories}
+          setTodoCategories={setTodoCategories}
           isHolidayMode={isHolidayMode}
         />
       )}

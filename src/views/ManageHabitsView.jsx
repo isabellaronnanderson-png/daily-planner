@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Plus, Plane } from 'lucide-react';
 import ActionMenu from '../components/ActionMenu';
+import { childrenOf, descendantIds, flattenGroups } from '../lib/groupTree';
 
 const WEEKDAYS = [
   { key: 'mon', label: 'M' },
@@ -84,7 +85,7 @@ function ManageRow({ name, badges, skipOnHoliday, dragOver, draggable, onEdit, o
 
 export default function ManageHabitsView({
   habits, addHabit, editHabit, deleteHabit, removeHabitOnly, removeInjectedInstances, reorderHabits,
-  groups, addGroup, toggleGroupCollapsed, deleteGroup, renameGroup, reorderGroups,
+  groups, addGroup, toggleGroupCollapsed, deleteGroup, moveGroup, renameGroup, reorderGroups,
   weeklyHabits, setWeeklyHabits,
 }) {
   const [dragId, setDragId] = useState(null);
@@ -96,6 +97,8 @@ export default function ManageHabitsView({
   const [groupDragOverId, setGroupDragOverId] = useState(null);
   const [editingGroupId, setEditingGroupId] = useState(null);
   const [groupEditName, setGroupEditName] = useState('');
+  const [addingSubFor, setAddingSubFor] = useState(null); // id of the group a new subgroup is being added to
+  const [subName, setSubName] = useState('');
 
   const [habitModal, setHabitModal] = useState(null); // { mode: 'create'|'edit', type?: 'regular'|'dayspecific', id? }
   const [draft, setDraft] = useState(EMPTY_DRAFT);
@@ -217,7 +220,7 @@ export default function ManageHabitsView({
 
   function habitDragProps(h) {
     return {
-      onDragStart: () => setDragId(h.id),
+      onDragStart: (e) => { e.stopPropagation(); setDragId(h.id); setGroupDragId(null); },
       onDragOver: (e) => { e.preventDefault(); setDragOverId(h.id); },
       onDragLeave: () => setDragOverId(null),
       onDrop: (e) => {
@@ -239,10 +242,151 @@ export default function ManageHabitsView({
     };
   }
 
+  // A habit pointing at a group that no longer exists counts as ungrouped.
+  const knownGroupIds = new Set(groups.map((g) => g.id));
+  const groupKeyOf = (x) => (x.groupId && knownGroupIds.has(x.groupId) ? x.groupId : null);
   function itemsForGroup(groupId) {
-    const regular = habits.filter((h) => (h.groupId || null) === groupId);
-    const daySpecific = weeklyHabits.filter((w) => (w.groupId || null) === groupId);
+    const regular = habits.filter((h) => groupKeyOf(h) === groupId);
+    const daySpecific = weeklyHabits.filter((w) => groupKeyOf(w) === groupId);
     return { regular, daySpecific };
+  }
+  function subtreeTotal(groupId) {
+    const { regular, daySpecific } = itemsForGroup(groupId);
+    return regular.length + daySpecific.length + childrenOf(groups, groupId).reduce((n, k) => n + subtreeTotal(k.id), 0);
+  }
+
+  function handleGroupDrop(group) {
+    if (groupDragId) {
+      // Groups reorder among their siblings; use "Move" to put one inside another.
+      const dragged = groups.find((g) => g.id === groupDragId);
+      if (dragged && (dragged.parentId || null) === (group.parentId || null)) reorderGroups(groupDragId, group.id);
+      setGroupDragId(null);
+    } else if (dragId) {
+      reorderHabits(dragId, null, group.id);
+      setDragId(null);
+      setDragOverId(null);
+    }
+    setGroupDragOverId(null);
+  }
+
+  function submitSubgroup(e, parentId) {
+    e.preventDefault();
+    if (!subName.trim()) return;
+    addGroup(subName.trim(), parentId);
+    setSubName('');
+    setAddingSubFor(null);
+  }
+
+  function renderGroup(group, depth) {
+    const { regular, daySpecific } = itemsForGroup(group.id);
+    const kids = childrenOf(groups, group.id);
+    const total = subtreeTotal(group.id);
+    const blockedParents = descendantIds(groups, group.id);
+    return (
+      <div
+        className={`day-section ${depth > 0 ? 'day-subsection' : ''} ${groupDragOverId === group.id ? 'group-drag-over' : ''}`}
+        key={group.id}
+        draggable={editingGroupId !== group.id}
+        onDragStart={(e) => { e.stopPropagation(); setGroupDragId(group.id); setDragId(null); }}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setGroupDragOverId(group.id); }}
+        onDragLeave={() => setGroupDragOverId(null)}
+        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleGroupDrop(group); }}
+      >
+        <div className="day-section-header group-header">
+          <span
+            style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, cursor: 'pointer' }}
+            onClick={() => toggleGroupCollapsed(group.id)}
+          >
+            {group.collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+            {editingGroupId === group.id ? (
+              <input
+                type="text"
+                className="group-name-input"
+                value={groupEditName}
+                onChange={(e) => setGroupEditName(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onBlur={() => commitEditGroup(group.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); commitEditGroup(group.id); }
+                  if (e.key === 'Escape') { e.preventDefault(); setEditingGroupId(null); }
+                }}
+                autoFocus
+              />
+            ) : (
+              <span>{group.name}</span>
+            )}
+            <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({total})</span>
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <span role="button" tabIndex={0} className="btn-ghost" style={{ fontSize: 11 }} onClick={(e) => { e.stopPropagation(); startEditGroup(group); }}>Rename</span>
+            <span
+              role="button"
+              tabIndex={0}
+              className="btn-ghost"
+              style={{ fontSize: 11 }}
+              onClick={(e) => { e.stopPropagation(); setAddingSubFor(group.id); setSubName(''); }}
+            >
+              Add subgroup
+            </span>
+            <span className="icon-tooltip-wrap" onClick={(e) => e.stopPropagation()}>
+              <span className="btn-ghost" style={{ fontSize: 11 }}>Move</span>
+              <select
+                className="move-select"
+                aria-label={`Move ${group.name} inside another group`}
+                value={group.parentId && knownGroupIds.has(group.parentId) ? group.parentId : ''}
+                onChange={(e) => moveGroup(group.id, e.target.value || null)}
+              >
+                <option value="">Top level</option>
+                {flattenGroups(groups)
+                  .filter(({ group: g }) => g.id !== group.id && !blockedParents.has(g.id))
+                  .map(({ group: g, path }) => (
+                    <option key={g.id} value={g.id}>Inside: {path}</option>
+                  ))}
+              </select>
+            </span>
+            <span role="button" tabIndex={0} className="btn-ghost btn-danger" style={{ fontSize: 11 }} onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}>Remove group</span>
+          </span>
+        </div>
+        {!group.collapsed && (
+          <div className="day-section-body">
+            {regular.length + daySpecific.length === 0 && kids.length === 0 && addingSubFor !== group.id && (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 16px' }}>Nothing in this group yet — drag a habit here, or add a subgroup.</p>
+            )}
+            {regular.map((habit) => (
+              <ManageRow
+                key={habit.id}
+                name={habit.name}
+                badges={regularBadges(habit)}
+                skipOnHoliday={habit.skipOnHoliday}
+                draggable
+                dragOver={dragOverId === habit.id}
+                onEdit={() => openEditRegular(habit)}
+                onDelete={() => deleteHabit(habit.id)}
+                {...habitDragProps(habit)}
+              />
+            ))}
+            {daySpecific.map((w) => (
+              <ManageRow
+                key={'ds_' + w.id}
+                name={w.name}
+                badges={daySpecificBadges(w)}
+                skipOnHoliday={w.skipOnHoliday}
+                onEdit={() => openEditDaySpecific(w)}
+                onDelete={() => setWeeklyHabits(weeklyHabits.filter((x) => x.id !== w.id))}
+              />
+            ))}
+            {addingSubFor === group.id && (
+              <form className="form-row subgroup-form" onSubmit={(e) => submitSubgroup(e, group.id)}>
+                <input type="text" placeholder={`Subgroup inside ${group.name}`} value={subName} onChange={(e) => setSubName(e.target.value)} autoFocus />
+                <button type="submit" className="btn btn-primary">Add</button>
+                <button type="button" className="btn" onClick={() => setAddingSubFor(null)}>Cancel</button>
+              </form>
+            )}
+            {kids.map((child) => renderGroup(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
   }
 
   const ungrouped = itemsForGroup(null);
@@ -255,95 +399,7 @@ export default function ManageHabitsView({
       </div>
 
       <div className="day-list-outer">
-        {groups.map((group) => {
-          const { regular, daySpecific } = itemsForGroup(group.id);
-          const total = regular.length + daySpecific.length;
-          return (
-            <div
-              className={`day-section ${groupDragOverId === group.id ? 'group-drag-over' : ''}`}
-              key={group.id}
-              draggable={editingGroupId !== group.id}
-              onDragStart={() => setGroupDragId(group.id)}
-              onDragOver={(e) => { e.preventDefault(); setGroupDragOverId(group.id); }}
-              onDragLeave={() => setGroupDragOverId(null)}
-              onDrop={() => {
-                if (groupDragId) {
-                  reorderGroups(groupDragId, group.id);
-                  setGroupDragId(null);
-                } else if (dragId) {
-                  reorderHabits(dragId, null, group.id);
-                  setDragId(null);
-                  setDragOverId(null);
-                }
-                setGroupDragOverId(null);
-              }}
-            >
-              <div className="day-section-header group-header">
-                <span
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, cursor: 'pointer' }}
-                  onClick={() => toggleGroupCollapsed(group.id)}
-                >
-                  {group.collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
-                  {editingGroupId === group.id ? (
-                    <input
-                      type="text"
-                      className="group-name-input"
-                      value={groupEditName}
-                      onChange={(e) => setGroupEditName(e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      onBlur={() => commitEditGroup(group.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') { e.preventDefault(); commitEditGroup(group.id); }
-                        if (e.key === 'Escape') { e.preventDefault(); setEditingGroupId(null); }
-                      }}
-                      autoFocus
-                    />
-                  ) : (
-                    <span>{group.name}</span>
-                  )}
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({total})</span>
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-                  <span role="button" tabIndex={0} className="btn-ghost" style={{ fontSize: 11 }} onClick={(e) => { e.stopPropagation(); startEditGroup(group); }}>Rename</span>
-                  <span role="button" tabIndex={0} className="btn-ghost btn-danger" style={{ fontSize: 11 }} onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}>Remove group</span>
-                </span>
-              </div>
-              {!group.collapsed && (
-                <div className="day-section-body" {...groupContainerDropProps(group.id)}>
-                  {total === 0 ? (
-                    <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 16px' }}>No habits in this group yet — drag one here, or add one above.</p>
-                  ) : (
-                    <>
-                      {regular.map((habit) => (
-                        <ManageRow
-                          key={habit.id}
-                          name={habit.name}
-                          badges={regularBadges(habit)}
-                          skipOnHoliday={habit.skipOnHoliday}
-                          draggable
-                          dragOver={dragOverId === habit.id}
-                          onEdit={() => openEditRegular(habit)}
-                          onDelete={() => deleteHabit(habit.id)}
-                          {...habitDragProps(habit)}
-                        />
-                      ))}
-                      {daySpecific.map((w) => (
-                        <ManageRow
-                          key={'ds_' + w.id}
-                          name={w.name}
-                          badges={daySpecificBadges(w)}
-                          skipOnHoliday={w.skipOnHoliday}
-                          onEdit={() => openEditDaySpecific(w)}
-                          onDelete={() => setWeeklyHabits(weeklyHabits.filter((x) => x.id !== w.id))}
-                        />
-                      ))}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {childrenOf(groups, null).map((group) => renderGroup(group, 0))}
 
         <div className="day-section" {...groupContainerDropProps(null)}>
           {groups.length > 0 && (ungrouped.regular.length + ungrouped.daySpecific.length > 0) && (
@@ -494,8 +550,8 @@ export default function ManageHabitsView({
                 <label>Group</label>
                 <select value={draft.groupId || ''} onChange={(e) => setDraft({ ...draft, groupId: e.target.value })}>
                   <option value="">No group</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>{g.name}</option>
+                  {flattenGroups(groups).map(({ group: g, path }) => (
+                    <option key={g.id} value={g.id}>{path}</option>
                   ))}
                 </select>
               </div>

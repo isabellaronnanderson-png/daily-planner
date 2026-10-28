@@ -1,4 +1,5 @@
 import { monthKeyOf, officeCountForMonth, formatMonthKey } from '../lib/officeDays';
+import { flattenGroups } from '../lib/groupTree';
 
 export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, groups, weeklyHabits, officeDays = [], currentDate }) {
   const thisMonthKey = monthKeyOf(currentDate || new Date().toISOString());
@@ -35,9 +36,10 @@ export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, 
   const names = Object.keys(stats);
   const byGroup = {};
   const ungrouped = [];
+  const knownGroupIds = new Set(groups.map((g) => g.id));
   names.forEach((n) => {
     const gid = groupIdFor(n);
-    if (gid) {
+    if (gid && knownGroupIds.has(gid)) {
       if (!byGroup[gid]) byGroup[gid] = [];
       byGroup[gid].push(n);
     } else {
@@ -99,12 +101,12 @@ export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, 
           </p>
         ) : (
           <>
-            {groups.map((g) => {
+            {flattenGroups(groups).map(({ group: g, path }) => {
               const list = byGroup[g.id];
               if (!list || list.length === 0) return null;
               return (
                 <div key={g.id}>
-                  <div className="history-subhead">{g.name}</div>
+                  <div className="history-subhead">{path}</div>
                   {renderRows(list)}
                 </div>
               );

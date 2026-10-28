@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { Check, X, Sparkles, Plane, Sun, CalendarDays, Flag } from 'lucide-react';
+import { Check, X, Sparkles, Plane, Sun, CalendarDays, Flag, FolderInput, Plus } from 'lucide-react';
 import CalendarPopover from '../components/CalendarPopover';
+import { localDateKey } from '../lib/officeDays';
+import { catIdOf, subIdOf } from '../lib/todoCategories';
 
 function IconToggle({ active, onClick, icon: Icon, label, activeColor = 'var(--navy)' }) {
   return (
@@ -40,7 +42,41 @@ function DeadlineButton({ dueDate, onSelect, onClear }) {
   );
 }
 
-function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, insertAfter, focusPrevious, inputRefs, onFocusRow, onBlurRow }) {
+// Native <select> laid invisibly over an icon: tapping the icon opens the
+// system picker (nice on a phone), listing every list and section.
+function MoveControl({ todo, categories, moveTodo }) {
+  const current = `${catIdOf(todo, categories)}|${subIdOf(todo, categories) || ''}`;
+  return (
+    <span className="icon-tooltip-wrap">
+      <button className="chore-remove" tabIndex={-1} aria-hidden="true"><FolderInput size={14} /></button>
+      <select
+        className="move-select"
+        value={current}
+        aria-label="Move to another list"
+        onChange={(e) => {
+          const [catId, subId] = e.target.value.split('|');
+          moveTodo(todo.id, catId, subId || null);
+        }}
+      >
+        {categories.map((cat) =>
+          cat.subs.length === 0 ? (
+            <option key={cat.id} value={`${cat.id}|`}>{cat.name}</option>
+          ) : (
+            <optgroup key={cat.id} label={cat.name}>
+              <option value={`${cat.id}|`}>General</option>
+              {cat.subs.map((sub) => (
+                <option key={sub.id} value={`${cat.id}|${sub.id}`}>{sub.name}</option>
+              ))}
+            </optgroup>
+          )
+        )}
+      </select>
+      <span className="icon-tooltip-bubble">Move to another list</span>
+    </span>
+  );
+}
+
+function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, insertAfter, focusPrevious, inputRefs, onFocusRow, onBlurRow, categories, moveTodo }) {
   function handleKeyDown(e) {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -73,11 +109,15 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
         />
         {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
         {todo.isFocus && <span className="pill pill-muted">In Today</span>}
+        {todo.snoozeUntil && todo.snoozeUntil > localDateKey(new Date().toISOString()) && !todo.isFocus && (
+          <span className="pill pill-muted">Saved for the weekend</span>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
         <IconToggle active={todo.longTerm} onClick={() => toggleLongTerm(todo.id)} icon={Flag} label={todo.longTerm ? "Long-term — won't be pulled into Today automatically" : 'Mark as long-term (kept out of daily pulls)'} />
         <IconToggle active={todo.skipOnHoliday} onClick={() => toggleSkipHoliday(todo.id)} icon={Plane} label={todo.skipOnHoliday ? 'Pauses on holiday — click to unpause' : 'Pause this task during holiday mode'} />
         <IconToggle active={todo.weekendOnly} onClick={() => toggleWeekendOnly(todo.id)} icon={Sun} label={todo.weekendOnly ? 'Only pulled in on weekends — click to allow any day' : 'Only relevant on weekends'} />
+        <MoveControl todo={todo} categories={categories} moveTodo={moveTodo} />
         <DeadlineButton dueDate={todo.dueDate} onSelect={(d) => setDueDate(todo.id, d)} onClear={() => setDueDate(todo.id, '')} />
         {todo.isFocus ? (
           <button className="btn-ghost btn-danger" onClick={() => removeFromFocus(todo.id)}>Remove from Today</button>
@@ -92,7 +132,7 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
   );
 }
 
-function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, appendBlank, ensureBlank }) {
+function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, appendBlank, ensureBlank, categories, moveTodo }) {
   const inputRefs = useRef({});
   const pendingFocusId = useRef(null);
   // The row currently being typed in stays put, so clearing a task's text to
@@ -156,7 +196,7 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
 
   return (
     <div className="bank-box">
-      <h3 className="section-title" style={{ marginBottom: 10 }}>{title}</h3>
+      {title && <h3 className="section-title" style={{ marginBottom: 10 }}>{title}</h3>}
       <div className="bank-list">
         {sorted.map((todo, i) => (
           <TodoRow
@@ -178,6 +218,8 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
             inputRefs={inputRefs}
             onFocusRow={setEditingId}
             onBlurRow={handleBlurRow}
+            categories={categories}
+            moveTodo={moveTodo}
           />
         ))}
       </div>
@@ -187,9 +229,19 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
 
 export default function TodoView({
   todos, setTodos, toggleTodo, deleteTodo, makeFocus, removeFromFocus,
-  toggleTodoSkipHoliday, toggleTodoWeekendOnly, toggleTodoIsWork,
+  toggleTodoSkipHoliday, toggleTodoWeekendOnly,
+  todoCategories: categories, setTodoCategories,
 }) {
-  function blankTodo(isWork) {
+  const [activeCatId, setActiveCatId] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [addingCat, setAddingCat] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newSubName, setNewSubName] = useState('');
+
+  const activeCat = categories.find((c) => c.id === activeCatId) || categories[0];
+
+  function blankTodo(catId, subId) {
+    const cat = categories.find((c) => c.id === catId);
     return {
       id: 't_' + Date.now() + Math.random().toString(36).slice(2, 6),
       name: '',
@@ -200,22 +252,26 @@ export default function TodoView({
       skipOnHoliday: false,
       weekendOnly: false,
       longTerm: false,
-      isWork,
+      isWork: !!(cat && cat.isWork),
+      categoryId: catId,
+      subId: subId || null,
     };
   }
 
-  function appendBlank(isWork) {
-    const newTodo = blankTodo(isWork);
+  function appendBlank(catId, subId) {
+    const newTodo = blankTodo(catId, subId);
     setTodos((prev) => [...prev, newTodo]);
     return newTodo.id;
   }
 
-  // Adds a blank row only if this list doesn't already have one. Checking
+  // Adds a blank row only if this section doesn't already have one. Checking
   // inside the state update means a double call can never create two.
-  function ensureBlank(isWork) {
+  function ensureBlank(catId, subId) {
     setTodos((prev) => {
-      const has = prev.some((t) => !t.completed && !!t.isWork === isWork && t.name.trim() === '');
-      return has ? prev : [...prev, blankTodo(isWork)];
+      const has = prev.some(
+        (t) => !t.completed && catIdOf(t, categories) === catId && subIdOf(t, categories) === (subId || null) && t.name.trim() === ''
+      );
+      return has ? prev : [...prev, blankTodo(catId, subId)];
     });
   }
 
@@ -231,8 +287,71 @@ export default function TodoView({
     setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, longTerm: !t.longTerm } : t)));
   }
 
-  const workItems = todos.filter((t) => !t.completed && t.isWork);
-  const personalItems = todos.filter((t) => !t.completed && !t.isWork);
+  function moveTodo(id, catId, subId) {
+    const cat = categories.find((c) => c.id === catId);
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, categoryId: catId, subId: subId || null, isWork: !!(cat && cat.isWork) } : t)));
+  }
+
+  // ---- Lists (tabs) and sections ----
+  function addCategory(name) {
+    const n = name.trim();
+    if (!n) return;
+    const id = 'c_' + Date.now();
+    setTodoCategories((prev) => [...prev, { id, name: n, isWork: false, subs: [] }]);
+    setActiveCatId(id);
+  }
+
+  function updateCategory(id, patch) {
+    setTodoCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    if ('isWork' in patch) {
+      setTodos((prev) => prev.map((t) => (catIdOf(t, categories) === id ? { ...t, isWork: patch.isWork } : t)));
+    }
+  }
+
+  // Deleting a list never deletes tasks — they move to the first other list.
+  function deleteCategory(id) {
+    if (categories.length <= 1) return;
+    const target = categories.find((c) => c.id !== id);
+    setTodos((prev) =>
+      prev.map((t) => (catIdOf(t, categories) === id ? { ...t, categoryId: target.id, subId: null, isWork: !!target.isWork } : t))
+    );
+    setTodoCategories((prev) => prev.filter((c) => c.id !== id));
+    setActiveCatId(target.id);
+  }
+
+  function addSub(catId, name) {
+    const n = name.trim();
+    if (!n) return;
+    setTodoCategories((prev) =>
+      prev.map((c) => (c.id === catId ? { ...c, subs: [...c.subs, { id: 's_' + Date.now(), name: n }] } : c))
+    );
+  }
+
+  function renameSub(catId, subId, name) {
+    setTodoCategories((prev) =>
+      prev.map((c) => (c.id === catId ? { ...c, subs: c.subs.map((s) => (s.id === subId ? { ...s, name } : s)) } : c))
+    );
+  }
+
+  // Deleting a section keeps its tasks — they drop into the list's General section.
+  function deleteSub(catId, subId) {
+    setTodos((prev) =>
+      prev.map((t) => (catIdOf(t, categories) === catId && subIdOf(t, categories) === subId ? { ...t, subId: null } : t))
+    );
+    setTodoCategories((prev) =>
+      prev.map((c) => (c.id === catId ? { ...c, subs: c.subs.filter((s) => s.id !== subId) } : c))
+    );
+  }
+
+  const openItemsFor = (catId, subId) =>
+    todos.filter((t) => !t.completed && catIdOf(t, categories) === catId && subIdOf(t, categories) === subId);
+  const countFor = (catId) =>
+    todos.filter((t) => !t.completed && t.name.trim() && catIdOf(t, categories) === catId).length;
+
+  const sections = [
+    { subId: null, title: activeCat.subs.length > 0 ? 'General' : null },
+    ...activeCat.subs.map((s) => ({ subId: s.id, title: s.name })),
+  ];
 
   return (
     <div className="view">
@@ -240,37 +359,112 @@ export default function TodoView({
         <h2 className="section-title">To-do</h2>
       </div>
 
-      <TodoSection
-        title="Personal"
-        items={personalItems}
-        toggleTodo={toggleTodo}
-        updateName={updateName}
-        setDueDate={setDueDate}
-        toggleSkipHoliday={toggleTodoSkipHoliday}
-        toggleWeekendOnly={toggleTodoWeekendOnly}
-        toggleLongTerm={toggleLongTerm}
-        deleteTodo={deleteTodo}
-        makeFocus={makeFocus}
-        removeFromFocus={removeFromFocus}
-        appendBlank={() => appendBlank(false)}
-        ensureBlank={() => ensureBlank(false)}
-      />
+      <div className="todo-tabs">
+        {categories.map((cat) => (
+          <button
+            key={cat.id}
+            className={`todo-tab ${cat.id === activeCat.id ? 'active' : ''}`}
+            onClick={() => setActiveCatId(cat.id)}
+          >
+            {cat.name}
+            <span className="todo-tab-count">{countFor(cat.id)}</span>
+          </button>
+        ))}
+        {addingCat ? (
+          <input
+            autoFocus
+            className="todo-tab-input"
+            placeholder="List name…"
+            value={newCatName}
+            onChange={(e) => setNewCatName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { addCategory(newCatName); setNewCatName(''); setAddingCat(false); }
+              if (e.key === 'Escape') { setNewCatName(''); setAddingCat(false); }
+            }}
+            onBlur={() => { if (newCatName.trim()) addCategory(newCatName); setNewCatName(''); setAddingCat(false); }}
+          />
+        ) : (
+          <button className="todo-tab todo-tab-add" onClick={() => setAddingCat(true)} aria-label="Add a list" title="Add a list">
+            <Plus size={13} />
+          </button>
+        )}
+        <button className="btn-ghost todo-edit-toggle" onClick={() => setEditing((e) => !e)}>
+          {editing ? 'Done' : 'Edit lists'}
+        </button>
+      </div>
 
-      <TodoSection
-        title="Work"
-        items={workItems}
-        toggleTodo={toggleTodo}
-        updateName={updateName}
-        setDueDate={setDueDate}
-        toggleSkipHoliday={toggleTodoSkipHoliday}
-        toggleWeekendOnly={toggleTodoWeekendOnly}
-        toggleLongTerm={toggleLongTerm}
-        deleteTodo={deleteTodo}
-        makeFocus={makeFocus}
-        removeFromFocus={removeFromFocus}
-        appendBlank={() => appendBlank(true)}
-        ensureBlank={() => ensureBlank(true)}
-      />
+      {editing && (
+        <div className="todo-edit-panel">
+          <div className="todo-edit-row">
+            <input
+              className="todo-edit-input"
+              value={activeCat.name}
+              onChange={(e) => updateCategory(activeCat.id, { name: e.target.value })}
+              onBlur={() => { if (!activeCat.name.trim()) updateCategory(activeCat.id, { name: 'Untitled' }); }}
+              aria-label="List name"
+            />
+            <label className="toggle-pill" title="Work lists get priority on weekdays when tasks are pulled into Today">
+              <input type="checkbox" checked={!!activeCat.isWork} onChange={(e) => updateCategory(activeCat.id, { isWork: e.target.checked })} />
+              Work list
+            </label>
+            {categories.length > 1 && (
+              <button
+                className="btn-ghost btn-danger"
+                onClick={() => {
+                  if (confirm(`Delete the "${activeCat.name}" list? Its tasks move to another list — nothing is lost.`)) deleteCategory(activeCat.id);
+                }}
+              >
+                Delete list
+              </button>
+            )}
+          </div>
+          <div className="todo-edit-subtitle">Sections in this list</div>
+          {activeCat.subs.map((sub) => (
+            <div className="todo-edit-row" key={sub.id}>
+              <input
+                className="todo-edit-input"
+                value={sub.name}
+                onChange={(e) => renameSub(activeCat.id, sub.id, e.target.value)}
+                onBlur={() => { if (!sub.name.trim()) renameSub(activeCat.id, sub.id, 'Untitled'); }}
+                aria-label="Section name"
+              />
+              <button className="chore-remove" onClick={() => deleteSub(activeCat.id, sub.id)} aria-label="Delete section"><X size={14} /></button>
+            </div>
+          ))}
+          <div className="todo-edit-row">
+            <input
+              className="todo-edit-input"
+              placeholder="+ Add a section (press Enter)"
+              value={newSubName}
+              onChange={(e) => setNewSubName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); addSub(activeCat.id, newSubName); setNewSubName(''); }
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {sections.map((sec) => (
+        <TodoSection
+          key={`${activeCat.id}|${sec.subId || ''}`}
+          title={sec.title}
+          items={openItemsFor(activeCat.id, sec.subId)}
+          toggleTodo={toggleTodo}
+          updateName={updateName}
+          setDueDate={setDueDate}
+          toggleSkipHoliday={toggleTodoSkipHoliday}
+          toggleWeekendOnly={toggleTodoWeekendOnly}
+          toggleLongTerm={toggleLongTerm}
+          deleteTodo={deleteTodo}
+          makeFocus={makeFocus}
+          removeFromFocus={removeFromFocus}
+          appendBlank={() => appendBlank(activeCat.id, sec.subId)}
+          ensureBlank={() => ensureBlank(activeCat.id, sec.subId)}
+          categories={categories}
+          moveTodo={moveTodo}
+        />
+      ))}
     </div>
   );
 }

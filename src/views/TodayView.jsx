@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
-import { Square, ChevronDown, ChevronRight, Sparkles, CalendarDays } from 'lucide-react';
+import { Square, ChevronDown, ChevronRight, Sparkles, CalendarDays, CalendarClock } from 'lucide-react';
 import CalendarPopover from '../components/CalendarPopover';
 import PastDaySheet from '../components/PastDaySheet';
 import DoneHabits from '../components/DoneHabits';
 import DailyNote from '../components/DailyNote';
-import TopPriorities from '../components/TopPriorities';
+import TodayTodos from '../components/TodayTodos';
+import TodayLines from '../components/TodayLines';
 import NotesWidget from '../components/NotesWidget';
 import { localDateKey, monthKeyOf, officeCountForMonth } from '../lib/officeDays';
+import { childrenOf } from '../lib/groupTree';
 
 // "New day" jumps to the actual current day. The small calendar button beside
 // it opens any of the last two weeks (matching the daily history that's kept)
@@ -104,7 +106,9 @@ export default function TodayView({
   chores, resetChore,
   notes, setNotes, activeNoteId, setActiveNoteId,
   dailyNoteText, setDailyNoteText, dailyNoteImage, setDailyNoteImage,
-  priorityOrder, setPriorityOrder,
+  dailyPriorities, setDailyPriorities,
+  todayLines, setTodayLines,
+  updateTodoName, deleteTodo, addFocusTodo, reorderFocusTodos, snoozeToWeekend,
   officeDays, setOfficeDays, toggleOfficeDay, currentDate, weeklyHabits,
   habitHistory, setHabitHistory,
   weeklyGoalHistory, setWeeklyGoalHistory,
@@ -119,24 +123,70 @@ export default function TodayView({
   // Hide a habit the moment it's completed — it reappears next time its
   // cadence brings it back around, instead of sitting there struck-through.
   const visibleHabits = habits.filter((h) => !h.completed && !(isHolidayMode && h.skipOnHoliday));
-  const ungroupedHabits = visibleHabits.filter((h) => !h.groupId);
+  const groupIds = new Set(groups.map((g) => g.id));
+  const ungroupedHabits = visibleHabits.filter((h) => !h.groupId || !groupIds.has(h.groupId));
+
+  // A group (and anything nested in it) only shows while it has something left
+  // to do. Subgroups sit indented inside their parent and fold away with it.
+  const subtreeCount = (id) =>
+    visibleHabits.filter((h) => h.groupId === id).length + childrenOf(groups, id).reduce((n, k) => n + subtreeCount(k.id), 0);
+  function renderGroup(group, depth) {
+    const total = subtreeCount(group.id);
+    if (total === 0) return null;
+    const items = visibleHabits.filter((h) => h.groupId === group.id);
+    return (
+      <div className={`day-section ${depth > 0 ? 'day-subsection' : ''}`} key={group.id}>
+        <button className="day-section-header" onClick={() => toggleGroupCollapsed(group.id)}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {group.collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+            {group.name}
+            <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({total})</span>
+          </span>
+        </button>
+        {!group.collapsed && (
+          <div className="day-section-body">
+            {items.map((habit) => (
+              <TodayHabitRow key={habit.id} habit={habit} setHabitCount={setHabitCount} />
+            ))}
+            {childrenOf(groups, group.id).map((child) => renderGroup(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  }
   // Ticked-off habits sit in their own collapsed group, with when they return.
   const doneHabits = habits.filter((h) => h.completed && !(isHolidayMode && h.skipOnHoliday));
 
-  const overdueChores = chores.filter((c) => isChoreOverdue(c) && !(isHolidayMode && c.skipOnHoliday));
-  const urgentTodos = todos.filter((t) => !t.completed && t.dueDate).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 3);
+  // Items sent to "this weekend" stay out of Needs attention until that
+  // Saturday. The button only shows Mon–Fri (on a weekend or holiday they're
+  // simply due).
+  const todayKey = localDateKey(new Date().toISOString());
+  const isSnoozed = (item) => !!item.snoozeUntil && item.snoozeUntil > todayKey;
+  const canSnooze = !isHolidayMode && ![0, 6].includes(new Date().getDay());
+
+  const overdueChores = chores.filter((c) => isChoreOverdue(c) && !(isHolidayMode && c.skipOnHoliday) && !isSnoozed(c));
+  const urgentTodos = todos.filter((t) => !t.completed && t.dueDate && !isSnoozed(t)).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 3);
   const showBanner = overdueChores.length > 0 || urgentTodos.length > 0;
 
   return (
     <div className="view">
-      <DailyNote text={dailyNoteText} setText={setDailyNoteText} image={dailyNoteImage} setImage={setDailyNoteImage} />
+      <DailyNote
+        text={dailyNoteText}
+        setText={setDailyNoteText}
+        image={dailyNoteImage}
+        setImage={setDailyNoteImage}
+        priorities={dailyPriorities}
+        setPriorities={setDailyPriorities}
+      />
 
-      <TopPriorities
+      <TodayTodos
         focusItems={focusItems}
         toggleTodo={toggleTodo}
         removeFromFocus={removeFromFocus}
-        priorityOrder={priorityOrder}
-        setPriorityOrder={setPriorityOrder}
+        updateTodoName={updateTodoName}
+        deleteTodo={deleteTodo}
+        addFocusTodo={addFocusTodo}
+        reorderFocusTodos={reorderFocusTodos}
       />
 
       <div className="section-row">
@@ -184,6 +234,11 @@ export default function TodayView({
                       <Sparkles size={12} /> Focus
                     </button>
                   )}
+                  {canSnooze && !(existing && existing.isFocus) && (
+                    <button className="btn" onClick={() => snoozeToWeekend('chore', chore.id)} title="Hide this until the weekend">
+                      <CalendarClock size={12} /> This weekend
+                    </button>
+                  )}
                   <button
                     className="btn"
                     onClick={() => {
@@ -206,7 +261,14 @@ export default function TodayView({
               {task.isFocus ? (
                 <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>In focus</span>
               ) : (
-                <button className="btn" onClick={() => makeFocus(task.id)}><Sparkles size={12} /> Focus</button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {canSnooze && (
+                    <button className="btn" onClick={() => snoozeToWeekend('todo', task.id)} title="Hide this until the weekend">
+                      <CalendarClock size={12} /> This weekend
+                    </button>
+                  )}
+                  <button className="btn" onClick={() => makeFocus(task.id)}><Sparkles size={12} /> Focus</button>
+                </div>
               )}
             </div>
           ))}
@@ -214,32 +276,11 @@ export default function TodayView({
       )}
 
       <div className="day-list-outer">
-        {groups.map((group) => {
-          const items = visibleHabits.filter((h) => h.groupId === group.id);
-          if (items.length === 0) return null;
-          return (
-            <div className="day-section" key={group.id}>
-              <button className="day-section-header" onClick={() => toggleGroupCollapsed(group.id)}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {group.collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
-                  {group.name}
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({items.length})</span>
-                </span>
-              </button>
-              {!group.collapsed && (
-                <div className="day-section-body">
-                  {items.map((habit) => (
-                    <TodayHabitRow key={habit.id} habit={habit} setHabitCount={setHabitCount} />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {childrenOf(groups, null).map((group) => renderGroup(group, 0))}
 
         {ungroupedHabits.length > 0 && (
           <div className="day-section">
-            {groups.some((g) => visibleHabits.some((h) => h.groupId === g.id)) && (
+            {groups.some((g) => subtreeCount(g.id) > 0) && (
               <div className="day-section-label">Ungrouped</div>
             )}
             <div className="day-section-body">
@@ -253,6 +294,13 @@ export default function TodayView({
         {visibleHabits.length === 0 && (
           <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>Nothing left for today — nice work.</div>
         )}
+
+        <div className="day-section">
+          <div className="day-section-label">Just today</div>
+          <div className="day-section-body">
+            <TodayLines lines={todayLines} setLines={setTodayLines} />
+          </div>
+        </div>
       </div>
 
       <DoneHabits habits={doneHabits} weeklyHabits={weeklyHabits} currentDate={currentDate} setHabitCount={setHabitCount} />
