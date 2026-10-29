@@ -41,3 +41,25 @@ export function flattenGroups(groups) {
   walk(null, 0, []);
   return out;
 }
+
+// ---- Which tab a group / habit lives on ----
+// Only top-level groups carry a tabId; subgroups (and the habits in any
+// group) belong to whichever tab their top-level group is on. Anything
+// pointing at a tab that no longer exists falls back to "today".
+export function tabOfGroup(groups, id, tabIds) {
+  let cur = groups.find((g) => g.id === id);
+  const seen = new Set();
+  while (cur && cur.parentId && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    const parent = groups.find((g) => g.id === cur.parentId);
+    if (!parent) break;
+    cur = parent;
+  }
+  return cur && cur.tabId && tabIds.has(cur.tabId) ? cur.tabId : 'today';
+}
+
+// Works for habits, day-specific habits and one-off lines alike.
+export function tabOfItem(item, groups, tabIds) {
+  if (item.groupId && groups.some((g) => g.id === item.groupId)) return tabOfGroup(groups, item.groupId, tabIds);
+  return item.tabId && tabIds.has(item.tabId) ? item.tabId : 'today';
+}

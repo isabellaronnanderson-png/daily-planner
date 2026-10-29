@@ -10,7 +10,8 @@ import InsightsView from './views/InsightsView';
 import { localDateKey, monthKeyOf } from './lib/officeDays';
 import { weekKeyFor, monthIndexFor, daysBetween } from './lib/cycles';
 import { DEFAULT_TODO_CATEGORIES, defaultCategory } from './lib/todoCategories';
-import { descendantIds } from './lib/groupTree';
+import { descendantIds, tabOfGroup, tabOfItem } from './lib/groupTree';
+import { DEFAULT_TODAY_TABS, PROTECTED_TAB_IDS, periodOfTab } from './lib/todayTabs';
 import './App.css';
 
 const DEFAULT_TAB_ORDER = ['habits', 'manage', 'todo', 'chores', 'insights'];
@@ -89,6 +90,10 @@ export default function PlannerApp({ user, signOut }) {
   const [todayLines, setTodayLines] = useLocalStorage('planner_today_lines', []);
   // To-do lists (tabs) and their sections.
   const [todoCategories, setTodoCategories] = useLocalStorage('planner_todo_categories', DEFAULT_TODO_CATEGORIES);
+  // Tabs for the Today view / Manage (Today, This week, Other, plus your own).
+  const [todayTabs, setTodayTabs] = useLocalStorage('planner_today_tabs', DEFAULT_TODAY_TABS);
+  // When the current Monday–Sunday week was begun (the "Begin a new week" button).
+  const [weekStartedAt, setWeekStartedAt] = useLocalStorage('planner_week_started_at', null);
 
   const safeTabOrder = [...tabOrder, ...DEFAULT_TAB_ORDER.filter((k) => !tabOrder.includes(k))].filter((k) => k !== 'weekend' && k !== 'schedule');
 
@@ -99,7 +104,7 @@ export default function PlannerApp({ user, signOut }) {
     habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, weeklyHabits, groups,
     todoSectionCollapsed, todos, isHolidayMode, holidayStartedAt, dayIsHoliday,
     scratchpad, notes, activeNoteId, dailyNoteText, dailyNoteImage, chores, officeDays, priorityOrder,
-    dailyPriorities, todayLines, todoCategories,
+    dailyPriorities, todayLines, todoCategories, todayTabs, weekStartedAt,
   };
 
   // Applies a full state blob (from the cloud or a restored backup file) —
@@ -134,6 +139,8 @@ export default function PlannerApp({ user, signOut }) {
     if (data.dailyPriorities !== undefined) setDailyPriorities(data.dailyPriorities);
     if (data.todayLines !== undefined) setTodayLines(data.todayLines);
     if (data.todoCategories !== undefined) setTodoCategories(data.todoCategories);
+    if (data.todayTabs !== undefined) setTodayTabs(data.todayTabs);
+    if (data.weekStartedAt !== undefined) setWeekStartedAt(data.weekStartedAt);
   }
 
   const { status: syncStatus, errorMessage: syncError } = useCloudSync(user, appState, applyFullState);
@@ -335,7 +342,13 @@ export default function PlannerApp({ user, signOut }) {
     // Day-specific habits that were due that day are part of the day's record too.
     // daySpecificTracked marks this as the full record, so a habit that's absent
     // from it is known not to have been due.
-    const dailySnapshot = habits.filter((h) => notPaused(h) && h.cadence !== 'week' && h.cadence !== 'month').map(toSnapshotItem);
+    // Habits on a weekly tab are reset by "Begin a new week" instead, so they're
+    // not part of any day's record and "New day" leaves them alone.
+    const tabIdSet = new Set(todayTabs.map((t) => t.id));
+    const periodOfHabit = (h) => periodOfTab(todayTabs, tabOfItem(h, groups, tabIdSet));
+    const dailySnapshot = habits
+      .filter((h) => notPaused(h) && h.cadence !== 'week' && h.cadence !== 'month' && periodOfHabit(h) !== 'week')
+      .map(toSnapshotItem);
     const closingEntry = { date: closingDateKey, snapshot: dailySnapshot, daySpecificTracked: true };
     if (holidayActive) closingEntry.holiday = true;
     setHabitHistory([closingEntry, ...habitHistory].slice(0, 14));
@@ -366,6 +379,7 @@ export default function PlannerApp({ user, signOut }) {
           count: 0,
           targetCount: 1,
           groupId: w.groupId || null,
+          tabId: w.tabId || null,
           fromWeekly: true,
           weeklyHabitId: w.id,
           skipOnHoliday: !!w.skipOnHoliday,
@@ -378,6 +392,7 @@ export default function PlannerApp({ user, signOut }) {
     const baseHabits = habits
       .filter((h) => !h.fromWeekly)
       .map((h) => {
+        if (periodOfHabit(h) === 'week') return h; // weekly-tab habits wait for "Begin a new week"
         if (h.cadence === 'week') {
           const resetDay = h.resetDay ?? 1;
           const everyWeeks = h.resetEvery || 1;
@@ -422,10 +437,11 @@ export default function PlannerApp({ user, signOut }) {
     setHabits([...baseHabits, ...freshlyTriggered]);
     setCurrentDate(nowIso);
     // Daily-note priorities: ticked-off ones clear with the day, unfinished
-    // ones carry over. "Just today" lines are for that day only, so they all
-    // clear. Office days only matter for the current month.
+    // ones carry over. One-off items on daily tabs are for that day only, so
+    // they clear (ones on a weekly tab last until the week is begun anew).
+    // Office days only matter for the current month.
     setDailyPriorities((prev) => prev.filter((p) => !p.done));
-    setTodayLines([]);
+    setTodayLines((prev) => prev.filter((l) => periodOfTab(todayTabs, tabOfItem(l, groups, tabIdSet)) === 'week'));
     const thisMonth = monthKeyOf(nowIso);
     setOfficeDays((prev) => prev.filter((d) => d.startsWith(thisMonth)));
 
@@ -465,7 +481,7 @@ export default function PlannerApp({ user, signOut }) {
   }
 
   // ---- Habit actions ----
-  function addHabit({ name, targetCount = 1, groupId = null, cadence = 'day', skipOnHoliday = false, resetDay = null, resetEvery = 1 }) {
+  function addHabit({ name, targetCount = 1, groupId = null, tabId = null, cadence = 'day', skipOnHoliday = false, resetDay = null, resetEvery = 1 }) {
     const effectiveResetDay = resetDay ?? 1;
     const cycleKey =
       cadence === 'week' ? weekKeyFor(new Date().toISOString(), effectiveResetDay)
@@ -478,6 +494,7 @@ export default function PlannerApp({ user, signOut }) {
       count: 0,
       targetCount: Math.max(1, targetCount),
       groupId: groupId || null,
+      tabId: tabId || null,
       cadence,
       skipOnHoliday,
       resetDay: effectiveResetDay,
@@ -528,7 +545,7 @@ export default function PlannerApp({ user, signOut }) {
     setHabits(
       habits.map((h) =>
         h.id === id
-          ? { ...h, name: trimmedName, targetCount: nextTarget, count: Math.min(h.count || 0, nextTarget), groupId: updates.groupId || null, cadence: nextCadence, skipOnHoliday: !!updates.skipOnHoliday, resetDay: nextResetDay, resetEvery: Math.max(1, updates.resetEvery || 1), cycleKey }
+          ? { ...h, name: trimmedName, targetCount: nextTarget, count: Math.min(h.count || 0, nextTarget), groupId: updates.groupId || null, tabId: updates.tabId || h.tabId || null, cadence: nextCadence, skipOnHoliday: !!updates.skipOnHoliday, resetDay: nextResetDay, resetEvery: Math.max(1, updates.resetEvery || 1), cycleKey }
           : h
       )
     );
@@ -604,36 +621,69 @@ export default function PlannerApp({ user, signOut }) {
   }
 
   // ---- Group actions ----
-  // parentId makes it a subgroup inside another group (null = top level).
-  function addGroup(name, parentId = null) {
+  // parentId makes it a subgroup inside another group (null = top level). A
+  // top-level group lives on a tab; subgroups follow their parent's tab.
+  function addGroup(name, parentId = null, tabId = 'today') {
     if (!name.trim()) return;
     const newGroup = { id: 'g_' + Date.now(), name: name.trim(), collapsed: false, parentId: parentId || null };
+    if (!parentId) newGroup.tabId = tabId || 'today';
     setGroups((prev) => [...prev.map((g) => (g.id === parentId ? { ...g, collapsed: false } : g)), newGroup]);
   }
   function toggleGroupCollapsed(id) {
     setGroups(groups.map((g) => (g.id === id ? { ...g, collapsed: !g.collapsed } : g)));
   }
   // Removing a group never removes what's inside it: its subgroups and habits
-  // move up into whatever it was sitting in (or to the top level / ungrouped).
+  // move up into whatever it was sitting in (or to the top level / ungrouped,
+  // staying on the same tab).
   function deleteGroup(id) {
     const target = groups.find((g) => g.id === id);
     if (!target) return;
     const parent = target.parentId || null;
-    setGroups((prev) => prev.filter((g) => g.id !== id).map((g) => (g.parentId === id ? { ...g, parentId: parent } : g)));
-    setHabits((prev) => prev.map((h) => (h.groupId === id ? { ...h, groupId: parent } : h)));
-    setWeeklyHabits((prev) => prev.map((w) => (w.groupId === id ? { ...w, groupId: parent } : w)));
+    const tabIdSet = new Set(todayTabs.map((t) => t.id));
+    const tab = tabOfGroup(groups, id, tabIdSet);
+    setGroups((prev) =>
+      prev
+        .filter((g) => g.id !== id)
+        .map((g) => {
+          if (g.parentId !== id) return g;
+          return parent ? { ...g, parentId: parent } : { ...g, parentId: null, tabId: tab };
+        })
+    );
+    setHabits((prev) => prev.map((h) => (h.groupId === id ? { ...h, groupId: parent, tabId: tab } : h)));
+    setWeeklyHabits((prev) => prev.map((w) => (w.groupId === id ? { ...w, groupId: parent, tabId: tab } : w)));
+    setTodayLines((prev) => prev.map((l) => (l.groupId === id ? { ...l, groupId: parent, tabId: tab } : l)));
   }
-  // Moves a group (with everything in it) inside another group, or back to the
-  // top level. A group can't go inside itself or one of its own subgroups.
-  function moveGroup(id, newParentId) {
+  // Moves a group (with everything in it) inside another group, back to the
+  // top level, or onto another tab (newTabId). A group can't go inside itself
+  // or one of its own subgroups.
+  function moveGroup(id, newParentId, newTabId = null) {
+    const tabIdSet = new Set(todayTabs.map((t) => t.id));
     setGroups((prev) => {
       if (newParentId && (newParentId === id || descendantIds(prev, id).has(newParentId))) return prev;
+      const currentTab = tabOfGroup(prev, id, tabIdSet);
       return prev.map((g) => {
-        if (g.id === id) return { ...g, parentId: newParentId || null };
+        if (g.id === id) {
+          if (newParentId) {
+            const { tabId: _dropped, ...rest } = g;
+            return { ...rest, parentId: newParentId };
+          }
+          return { ...g, parentId: null, tabId: newTabId || currentTab };
+        }
         if (g.id === newParentId) return { ...g, collapsed: false };
         return g;
       });
     });
+  }
+
+  // ---- Tabs ----
+  // Deleting a tab never deletes habits: everything on it moves to Today.
+  function deleteTab(id) {
+    if (PROTECTED_TAB_IDS.includes(id)) return;
+    setGroups((prev) => prev.map((g) => (!g.parentId && g.tabId === id ? { ...g, tabId: 'today' } : g)));
+    setHabits((prev) => prev.map((h) => (h.tabId === id ? { ...h, tabId: 'today' } : h)));
+    setWeeklyHabits((prev) => prev.map((w) => (w.tabId === id ? { ...w, tabId: 'today' } : w)));
+    setTodayLines((prev) => prev.map((l) => (l.tabId === id ? { ...l, tabId: 'today' } : l)));
+    setTodayTabs((prev) => prev.filter((t) => t.id !== id));
   }
   function renameGroup(id, newName) {
     if (!newName.trim()) return;
@@ -657,7 +707,7 @@ export default function PlannerApp({ user, signOut }) {
         if (t.id !== id) return t;
         const nextDone = !t.completed;
         if (nextDone && t.choreId) resetChore(t.choreId);
-        return { ...t, completed: nextDone, completedAt: nextDone ? Date.now() : null, isFocus: false };
+        return { ...t, completed: nextDone, completedAt: nextDone ? Date.now() : null, isFocus: false, weekFocus: false };
       })
     );
   }
@@ -684,37 +734,86 @@ export default function PlannerApp({ user, signOut }) {
     setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, name } : t)));
   }
 
-  // A task typed on the Today tab: a real to-do, already in Today.
-  function addFocusTodo(name) {
+  // A task typed on the Today (or This week) tab: a real to-do, already in
+  // that list.
+  function newTodoFor(name, flags) {
     const cat = defaultCategory(todoCategories);
-    setTodos((prev) => [
-      ...prev,
-      {
-        id: 't_' + Date.now() + Math.random().toString(36).slice(2, 6),
-        name,
-        dueDate: '',
-        isFocus: true,
-        completed: false,
-        completedAt: null,
-        skipOnHoliday: false,
-        weekendOnly: false,
-        longTerm: false,
-        isWork: !!cat.isWork,
-        categoryId: cat.id,
-        subId: null,
-      },
-    ]);
+    return {
+      id: 't_' + Date.now() + Math.random().toString(36).slice(2, 6),
+      name,
+      dueDate: '',
+      isFocus: false,
+      weekFocus: false,
+      completed: false,
+      completedAt: null,
+      skipOnHoliday: false,
+      weekendOnly: false,
+      longTerm: false,
+      isWork: !!cat.isWork,
+      categoryId: cat.id,
+      subId: null,
+      ...flags,
+    };
+  }
+  function addFocusTodo(name) {
+    setTodos((prev) => [...prev, newTodoFor(name, { isFocus: true })]);
+  }
+  function addWeekFocusTodo(name) {
+    setTodos((prev) => [...prev, newTodoFor(name, { weekFocus: true })]);
+  }
+  function removeFromWeekFocus(id) {
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, weekFocus: false } : t)));
+  }
+  function toggleWeekFocus(id) {
+    setTodos((prev) => prev.map((t) => (t.id === id && t.name.trim() ? { ...t, weekFocus: !t.weekFocus } : t)));
   }
 
   // "Do this weekend": hides a chore or task from Needs attention (and from
-  // the daily pull) until the coming Saturday, when it comes back.
+  // the daily pull) until the coming Saturday, when it comes back — and puts
+  // it on the This week list in the meantime.
   function snoozeToWeekend(kind, id) {
     const d = new Date();
     d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7));
     const until = localDateKey(d.toISOString());
-    if (kind === 'chore') setChores((prev) => prev.map((c) => (c.id === id ? { ...c, snoozeUntil: until } : c)));
-    else setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, snoozeUntil: until } : t)));
+    if (kind === 'chore') {
+      setChores((prev) => prev.map((c) => (c.id === id ? { ...c, snoozeUntil: until } : c)));
+      const chore = chores.find((c) => c.id === id);
+      setTodos((prev) => {
+        const existing = prev.find((t) => t.choreId === id && !t.completed);
+        if (existing) return prev.map((t) => (t.id === existing.id ? { ...t, weekFocus: true, isFocus: false } : t));
+        if (!chore) return prev;
+        return [...prev, { ...newTodoFor(chore.name, { weekFocus: true }), choreId: id }];
+      });
+    } else {
+      setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, snoozeUntil: until, weekFocus: true, isFocus: false } : t)));
+    }
   }
+
+  // "Begin a new week" (Monday–Sunday): the weekly-tab counterpart of New day.
+  // Files the week that's ending in the weekly history, resets the habits on
+  // weekly tabs, clears this week's one-off items, and starts the new week.
+  function beginNewWeek() {
+    const nowIso = new Date().toISOString();
+    const closingDateKey = localDateKey(nowIso);
+    const closingWeekStart = weekKeyFor(weekStartedAt || currentDate, 1);
+    const tabIdSet = new Set(todayTabs.map((t) => t.id));
+    const isWeekly = (h) => !h.fromWeekly && periodOfTab(todayTabs, tabOfItem(h, groups, tabIdSet)) === 'week';
+
+    const closing = habits
+      .filter((h) => isWeekly(h) && !(holidayActive && h.skipOnHoliday))
+      .map((h) => ({ name: h.name, completed: h.completed, count: h.count || 0, target: h.targetCount || 1, cycleStart: closingWeekStart }));
+    if (closing.length > 0) {
+      setWeeklyGoalHistory([{ date: closingDateKey, snapshot: closing }, ...weeklyGoalHistory].slice(0, 12));
+    }
+    setHabits(
+      habits.map((h) =>
+        isWeekly(h) ? { ...h, completed: false, count: 0, ...(h.cadence === 'week' ? { cycleKey: weekKeyFor(nowIso, 1) } : {}) } : h
+      )
+    );
+    setTodayLines((prev) => prev.filter((l) => periodOfTab(todayTabs, tabOfItem(l, groups, tabIdSet)) !== 'week'));
+    setWeekStartedAt(nowIso);
+  }
+
 
   // No hard cap — focus is now just "what I've chosen to work on today."
   function makeFocus(id) {
@@ -826,6 +925,11 @@ export default function PlannerApp({ user, signOut }) {
           setDailyPriorities={setDailyPriorities}
           todayLines={todayLines}
           setTodayLines={setTodayLines}
+          todayTabs={todayTabs}
+          weekStartedAt={weekStartedAt}
+          onBeginNewWeek={beginNewWeek}
+          addWeekFocusTodo={addWeekFocusTodo}
+          removeFromWeekFocus={removeFromWeekFocus}
           updateTodoName={updateTodoName}
           deleteTodo={deleteTodo}
           addFocusTodo={addFocusTodo}
@@ -843,6 +947,9 @@ export default function PlannerApp({ user, signOut }) {
           removeInjectedInstances={removeInjectedInstances}
           reorderHabits={reorderHabits}
           groups={groups}
+          todayTabs={todayTabs}
+          setTodayTabs={setTodayTabs}
+          deleteTab={deleteTab}
           addGroup={addGroup}
           toggleGroupCollapsed={toggleGroupCollapsed}
           deleteGroup={deleteGroup}
@@ -864,6 +971,7 @@ export default function PlannerApp({ user, signOut }) {
           removeFromFocus={removeFromFocus}
           toggleTodoSkipHoliday={toggleTodoSkipHoliday}
           toggleTodoWeekendOnly={toggleTodoWeekendOnly}
+          toggleWeekFocus={toggleWeekFocus}
           todoCategories={todoCategories}
           setTodoCategories={setTodoCategories}
           isHolidayMode={isHolidayMode}

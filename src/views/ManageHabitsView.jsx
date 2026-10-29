@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Plus, Plane } from 'lucide-react';
 import ActionMenu from '../components/ActionMenu';
-import { childrenOf, descendantIds, flattenGroups } from '../lib/groupTree';
+import { childrenOf, descendantIds, flattenGroups, tabOfGroup, tabOfItem } from '../lib/groupTree';
+import { PROTECTED_TAB_IDS, periodOfTab } from '../lib/todayTabs';
 
 const WEEKDAYS = [
   { key: 'mon', label: 'M' },
@@ -37,6 +38,7 @@ const EMPTY_DRAFT = {
   resetDay: 1,
   resetEvery: 1,
   groupId: '',
+  tabId: 'today',
   skipOnHoliday: false,
 };
 
@@ -85,9 +87,17 @@ function ManageRow({ name, badges, skipOnHoliday, dragOver, draggable, onEdit, o
 
 export default function ManageHabitsView({
   habits, addHabit, editHabit, deleteHabit, removeHabitOnly, removeInjectedInstances, reorderHabits,
-  groups, addGroup, toggleGroupCollapsed, deleteGroup, moveGroup, renameGroup, reorderGroups,
+  groups, todayTabs, setTodayTabs, deleteTab, addGroup, toggleGroupCollapsed, deleteGroup, moveGroup, renameGroup, reorderGroups,
   weeklyHabits, setWeeklyHabits,
 }) {
+  // Tabs organise habits the same way as on the Today view; each tab shows only its own.
+  const [tabId, setTabId] = useState('today');
+  const [editingTabs, setEditingTabs] = useState(false);
+  const [addingTab, setAddingTab] = useState(false);
+  const [newTabName, setNewTabName] = useState('');
+  const activeTab = todayTabs.find((t) => t.id === tabId) || todayTabs[0];
+  const tabIdSet = new Set(todayTabs.map((t) => t.id));
+
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
 
@@ -104,7 +114,7 @@ export default function ManageHabitsView({
   const [draft, setDraft] = useState(EMPTY_DRAFT);
 
   function openCreateModal() {
-    setDraft(EMPTY_DRAFT);
+    setDraft({ ...EMPTY_DRAFT, tabId: activeTab.id });
     setHabitModal({ mode: 'create' });
   }
   function openEditRegular(habit) {
@@ -117,6 +127,7 @@ export default function ManageHabitsView({
       resetDay: habit.resetDay ?? 1,
       resetEvery: habit.resetEvery || 1,
       groupId: habit.groupId || '',
+      tabId: tabOfItem(habit, groups, tabIdSet),
       skipOnHoliday: !!habit.skipOnHoliday,
     });
     setHabitModal({ mode: 'edit', type: 'regular', id: habit.id });
@@ -131,6 +142,7 @@ export default function ManageHabitsView({
       resetDay: 1,
       resetEvery: 1,
       groupId: w.groupId || '',
+      tabId: tabOfItem(w, groups, tabIdSet),
       skipOnHoliday: !!w.skipOnHoliday,
     });
     setHabitModal({ mode: 'edit', type: 'dayspecific', id: w.id });
@@ -161,7 +173,7 @@ export default function ManageHabitsView({
         setWeeklyHabits(
           weeklyHabits.map((w) =>
             w.id === habitModal.id
-              ? { ...w, name: draft.name.trim(), days: draft.days, everyNth, groupId: draft.groupId || null, skipOnHoliday: draft.skipOnHoliday }
+              ? { ...w, name: draft.name.trim(), days: draft.days, everyNth, groupId: draft.groupId || null, tabId: draft.tabId, skipOnHoliday: draft.skipOnHoliday }
               : w
           )
         );
@@ -177,6 +189,7 @@ export default function ManageHabitsView({
             days: draft.days,
             everyNth,
             groupId: draft.groupId || null,
+            tabId: draft.tabId,
             skipOnHoliday: draft.skipOnHoliday,
             occurrenceCount: 0,
           },
@@ -184,11 +197,13 @@ export default function ManageHabitsView({
       }
     } else {
       const targetCount = parseInt(draft.targetCount, 10) || 1;
+      // A habit on a weekly tab is a weekly goal (reset by "Begin a new week").
+      if (periodOfTab(todayTabs, draft.tabId) === 'week' && draft.repeats === 'day') draft.repeats = 'week';
       const parsedReset = parseInt(draft.resetDay, 10);
       const resetDay = Number.isNaN(parsedReset) ? 1 : parsedReset;
       const resetEvery = parseInt(draft.resetEvery, 10) || 1;
       if (isEdit && originalType === 'regular') {
-        editHabit(habitModal.id, { name: draft.name, targetCount, groupId: draft.groupId || null, cadence: draft.repeats, skipOnHoliday: draft.skipOnHoliday, resetDay, resetEvery });
+        editHabit(habitModal.id, { name: draft.name, targetCount, groupId: draft.groupId || null, tabId: draft.tabId, cadence: draft.repeats, skipOnHoliday: draft.skipOnHoliday, resetDay, resetEvery });
       } else {
         // Creating new, or converting a day-specific habit into a regular one:
         // in the latter case, remove the original (and any of today's copies).
@@ -196,7 +211,7 @@ export default function ManageHabitsView({
           setWeeklyHabits(weeklyHabits.filter((w) => w.id !== habitModal.id));
           removeInjectedInstances(habitModal.id);
         }
-        addHabit({ name: draft.name.trim(), targetCount, cadence: draft.repeats, groupId: draft.groupId || null, skipOnHoliday: draft.skipOnHoliday, resetDay, resetEvery });
+        addHabit({ name: draft.name.trim(), targetCount, cadence: draft.repeats, groupId: draft.groupId || null, tabId: draft.tabId, skipOnHoliday: draft.skipOnHoliday, resetDay, resetEvery });
       }
     }
     setHabitModal(null);
@@ -205,7 +220,7 @@ export default function ManageHabitsView({
   function submitGroup(e) {
     e.preventDefault();
     if (!groupName.trim()) return;
-    addGroup(groupName.trim());
+    addGroup(groupName.trim(), null, activeTab.id);
     setGroupName('');
     setAddingGroup(false);
   }
@@ -334,11 +349,20 @@ export default function ManageHabitsView({
                 className="move-select"
                 aria-label={`Move ${group.name} inside another group`}
                 value={group.parentId && knownGroupIds.has(group.parentId) ? group.parentId : ''}
-                onChange={(e) => moveGroup(group.id, e.target.value || null)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v.startsWith('tab:')) moveGroup(group.id, null, v.slice(4));
+                  else moveGroup(group.id, v || null);
+                }}
               >
                 <option value="">Top level</option>
+                {todayTabs
+                  .filter((t) => t.id !== activeTab.id)
+                  .map((t) => (
+                    <option key={t.id} value={`tab:${t.id}`}>Move to tab: {t.name}</option>
+                  ))}
                 {flattenGroups(groups)
-                  .filter(({ group: g }) => g.id !== group.id && !blockedParents.has(g.id))
+                  .filter(({ group: g }) => g.id !== group.id && !blockedParents.has(g.id) && tabOfGroup(groups, g.id, tabIdSet) === activeTab.id)
                   .map(({ group: g, path }) => (
                     <option key={g.id} value={g.id}>Inside: {path}</option>
                   ))}
@@ -389,7 +413,23 @@ export default function ManageHabitsView({
     );
   }
 
-  const ungrouped = itemsForGroup(null);
+  const ungroupedAll = itemsForGroup(null);
+  const ungrouped = {
+    regular: ungroupedAll.regular.filter((h) => tabOfItem(h, groups, tabIdSet) === activeTab.id),
+    daySpecific: ungroupedAll.daySpecific.filter((w) => tabOfItem(w, groups, tabIdSet) === activeTab.id),
+  };
+  const tabRoots = childrenOf(groups, null).filter((g) => tabOfGroup(groups, g.id, tabIdSet) === activeTab.id);
+
+  function addTab(name) {
+    const n = name.trim();
+    if (!n) return;
+    const id = 'tab_' + Date.now();
+    setTodayTabs((prev) => [...prev, { id, name: n, period: 'day', todos: null }]);
+    setTabId(id);
+  }
+  function renameTab(id, name) {
+    setTodayTabs((prev) => prev.map((t) => (t.id === id ? { ...t, name } : t)));
+  }
 
   return (
     <div className="view">
@@ -398,11 +438,75 @@ export default function ManageHabitsView({
         <button className="btn btn-primary" onClick={openCreateModal}><Plus size={13} /> New habit</button>
       </div>
 
+      <div className="todo-tabs">
+        {todayTabs.map((tab) => (
+          <button key={tab.id} className={`todo-tab ${tab.id === activeTab.id ? 'active' : ''}`} onClick={() => setTabId(tab.id)}>
+            {tab.name}
+          </button>
+        ))}
+        {addingTab ? (
+          <input
+            autoFocus
+            className="todo-tab-input"
+            placeholder="Tab name…"
+            value={newTabName}
+            onChange={(e) => setNewTabName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { addTab(newTabName); setNewTabName(''); setAddingTab(false); }
+              if (e.key === 'Escape') { setNewTabName(''); setAddingTab(false); }
+            }}
+            onBlur={() => { if (newTabName.trim()) addTab(newTabName); setNewTabName(''); setAddingTab(false); }}
+          />
+        ) : (
+          <button className="todo-tab todo-tab-add" onClick={() => setAddingTab(true)} aria-label="Add a tab" title="Add a tab">
+            <Plus size={13} />
+          </button>
+        )}
+        <button className="btn-ghost todo-edit-toggle" onClick={() => setEditingTabs((e) => !e)}>
+          {editingTabs ? 'Done' : 'Edit tabs'}
+        </button>
+      </div>
+
+      {editingTabs && (
+        <div className="todo-edit-panel">
+          <div className="todo-edit-row">
+            <input
+              className="todo-edit-input"
+              value={activeTab.name}
+              onChange={(e) => renameTab(activeTab.id, e.target.value)}
+              onBlur={() => { if (!activeTab.name.trim()) renameTab(activeTab.id, 'Untitled'); }}
+              aria-label="Tab name"
+            />
+            {!PROTECTED_TAB_IDS.includes(activeTab.id) && (
+              <button
+                className="btn-ghost btn-danger"
+                onClick={() => {
+                  if (confirm(`Delete the "${activeTab.name}" tab? Everything on it moves to Today — nothing is lost.`)) {
+                    deleteTab(activeTab.id);
+                    setTabId('today');
+                  }
+                }}
+              >
+                Delete tab
+              </button>
+            )}
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '4px 0 0' }}>
+            {activeTab.period === 'week'
+              ? 'Habits on this tab reset when you press "Begin a new week" (Monday–Sunday), and it has its own to-do list.'
+              : activeTab.todos === 'today'
+                ? 'Habits on this tab reset with "New day", and it has its own to-do list.'
+                : 'Habits on this tab reset with "New day".'}
+            {!PROTECTED_TAB_IDS.includes(activeTab.id) ? '' : ' This tab can be renamed but not deleted.'}
+          </p>
+        </div>
+      )}
+
       <div className="day-list-outer">
-        {childrenOf(groups, null).map((group) => renderGroup(group, 0))}
+        {tabRoots.map((group) => renderGroup(group, 0))}
 
         <div className="day-section" {...groupContainerDropProps(null)}>
-          {groups.length > 0 && (ungrouped.regular.length + ungrouped.daySpecific.length > 0) && (
+          {tabRoots.length > 0 && (ungrouped.regular.length + ungrouped.daySpecific.length > 0) && (
             <div className="day-section-label">Ungrouped</div>
           )}
           <div className="day-section-body">
@@ -429,8 +533,8 @@ export default function ManageHabitsView({
                 onDelete={() => setWeeklyHabits(weeklyHabits.filter((x) => x.id !== w.id))}
               />
             ))}
-            {ungrouped.regular.length === 0 && ungrouped.daySpecific.length === 0 && groups.length === 0 && (
-              <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>No habits yet — add one above.</div>
+            {ungrouped.regular.length === 0 && ungrouped.daySpecific.length === 0 && tabRoots.length === 0 && (
+              <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>Nothing on this tab yet — add a habit or a group.</div>
             )}
           </div>
         </div>
@@ -547,12 +651,30 @@ export default function ManageHabitsView({
               )}
 
               <div className="modal-row">
+                <label>Tab</label>
+                <select
+                  value={draft.tabId}
+                  onChange={(e) => {
+                    const nextTab = e.target.value;
+                    // The group has to be on the same tab, so clear it if it isn't.
+                    const keepGroup = draft.groupId && tabOfGroup(groups, draft.groupId, tabIdSet) === nextTab;
+                    setDraft({ ...draft, tabId: nextTab, groupId: keepGroup ? draft.groupId : '' });
+                  }}
+                >
+                  {todayTabs.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="modal-row">
                 <label>Group</label>
                 <select value={draft.groupId || ''} onChange={(e) => setDraft({ ...draft, groupId: e.target.value })}>
                   <option value="">No group</option>
-                  {flattenGroups(groups).map(({ group: g, path }) => (
-                    <option key={g.id} value={g.id}>{path}</option>
-                  ))}
+                  {flattenGroups(groups)
+                    .filter(({ group: g }) => tabOfGroup(groups, g.id, tabIdSet) === draft.tabId)
+                    .map(({ group: g, path }) => (
+                      <option key={g.id} value={g.id}>{path}</option>
+                    ))}
                 </select>
               </div>
               <div className="modal-row">

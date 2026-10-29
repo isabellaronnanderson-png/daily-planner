@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Check, X, Sparkles, Plane, Sun, CalendarDays, Flag, FolderInput, Plus } from 'lucide-react';
+import { Check, X, Sparkles, Plane, Sun, CalendarDays, CalendarRange, Flag, FolderInput, Plus } from 'lucide-react';
 import CalendarPopover from '../components/CalendarPopover';
 import { localDateKey } from '../lib/officeDays';
 import { catIdOf, subIdOf } from '../lib/todoCategories';
@@ -76,7 +76,7 @@ function MoveControl({ todo, categories, moveTodo }) {
   );
 }
 
-function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, insertAfter, focusPrevious, inputRefs, onFocusRow, onBlurRow, categories, moveTodo }) {
+function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, insertAfter, focusPrevious, inputRefs, onFocusRow, onBlurRow, categories, moveTodo, toggleWeekFocus }) {
   function handleKeyDown(e) {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -109,6 +109,7 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
         />
         {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
         {todo.isFocus && <span className="pill pill-muted">In Today</span>}
+        {todo.weekFocus && !todo.isFocus && <span className="pill pill-muted">This week</span>}
         {todo.snoozeUntil && todo.snoozeUntil > localDateKey(new Date().toISOString()) && !todo.isFocus && (
           <span className="pill pill-muted">Saved for the weekend</span>
         )}
@@ -117,6 +118,7 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
         <IconToggle active={todo.longTerm} onClick={() => toggleLongTerm(todo.id)} icon={Flag} label={todo.longTerm ? "Long-term — won't be pulled into Today automatically" : 'Mark as long-term (kept out of daily pulls)'} />
         <IconToggle active={todo.skipOnHoliday} onClick={() => toggleSkipHoliday(todo.id)} icon={Plane} label={todo.skipOnHoliday ? 'Pauses on holiday — click to unpause' : 'Pause this task during holiday mode'} />
         <IconToggle active={todo.weekendOnly} onClick={() => toggleWeekendOnly(todo.id)} icon={Sun} label={todo.weekendOnly ? 'Only pulled in on weekends — click to allow any day' : 'Only relevant on weekends'} />
+        <IconToggle active={todo.weekFocus} onClick={() => toggleWeekFocus(todo.id)} icon={CalendarRange} label={todo.weekFocus ? 'On the This week list — click to remove' : 'Add to the This week list'} activeColor="var(--navy)" />
         <MoveControl todo={todo} categories={categories} moveTodo={moveTodo} />
         <DeadlineButton dueDate={todo.dueDate} onSelect={(d) => setDueDate(todo.id, d)} onClear={() => setDueDate(todo.id, '')} />
         {todo.isFocus ? (
@@ -132,7 +134,7 @@ function TodoRow({ todo, index, items, toggleTodo, updateName, setDueDate, toggl
   );
 }
 
-function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, appendBlank, ensureBlank, categories, moveTodo }) {
+function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleSkipHoliday, toggleWeekendOnly, toggleLongTerm, deleteTodo, makeFocus, removeFromFocus, appendBlank, ensureBlank, categories, moveTodo, toggleWeekFocus }) {
   const inputRefs = useRef({});
   const pendingFocusId = useRef(null);
   // The row currently being typed in stays put, so clearing a task's text to
@@ -220,6 +222,7 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
             onBlurRow={handleBlurRow}
             categories={categories}
             moveTodo={moveTodo}
+            toggleWeekFocus={toggleWeekFocus}
           />
         ))}
       </div>
@@ -229,7 +232,7 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
 
 export default function TodoView({
   todos, setTodos, toggleTodo, deleteTodo, makeFocus, removeFromFocus,
-  toggleTodoSkipHoliday, toggleTodoWeekendOnly,
+  toggleTodoSkipHoliday, toggleTodoWeekendOnly, toggleWeekFocus,
   todoCategories: categories, setTodoCategories,
 }) {
   const [activeCatId, setActiveCatId] = useState(null);
@@ -463,6 +466,7 @@ export default function TodoView({
           ensureBlank={() => ensureBlank(activeCat.id, sec.subId)}
           categories={categories}
           moveTodo={moveTodo}
+          toggleWeekFocus={toggleWeekFocus}
         />
       ))}
     </div>
