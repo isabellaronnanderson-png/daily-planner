@@ -255,17 +255,9 @@ export default function PlannerApp({ user, signOut }) {
     return day === 0 || day === 6 || holiday;
   }
 
-  function isChoreOverdueLocal(chore) {
-    const totalGoalMs = chore.freqVal * (chore.freqUnit === 'weeks' ? 7 : chore.freqUnit === 'months' ? 30 : 1) * 24 * 60 * 60 * 1000;
-    return Date.now() - chore.lastDone >= totalGoalMs;
-  }
-
-  // Pulls up to 3 tasks from the bank into focus: overdue chores first (auto
-  // creating a bank entry for them if needed), then anything with a due
-  // date (soonest first), then everything else. Skips holiday-paused tasks
-  // while on holiday, and weekend-only tasks except on an actual weekend.
-  // Only tops up to 3 total — never removes anything already carried over
-  // or added by hand.
+  // Draws a fresh random three from the bank each New day (see autoFillFocus
+  // below). Skips holiday-paused tasks while on holiday, and weekend-only tasks
+  // except on an actual weekend; on weekdays work tasks come first.
   function shuffle(arr) {
     const a = [...arr];
     for (let i = a.length - 1; i > 0; i--) {
@@ -282,41 +274,36 @@ export default function PlannerApp({ user, signOut }) {
   // holiday-paused tasks while on holiday, and weekend-only tasks except on
   // an actual weekend. Only tops up to 3 total — never removes anything
   // already carried over or added by hand.
-  function autoFillFocus(todosList, onDate = new Date(), holiday = holidayActive, choresList = chores) {
+  function autoFillFocus(todosList, onDate = new Date(), holiday = holidayActive) {
     let list = [...todosList];
 
     // Anything sent to "this weekend" stays out of the daily pull until then.
     const dateKey = localDateKey(onDate.toISOString());
     const isSnoozed = (x) => !!x.snoozeUntil && x.snoozeUntil > dateKey;
-    const choreOf = (t) => (t.choreId ? choresList.find((c) => c.id === t.choreId) : null);
-
-    // Make sure overdue chores have a bank entry so they're eligible to be pulled in.
-    choresList
-      .filter((c) => isChoreOverdueLocal(c) && !(holiday && c.skipOnHoliday) && !isSnoozed(c))
-      .forEach((chore) => {
-        const existing = list.find((t) => t.choreId === chore.id && !t.completed);
-        if (!existing) {
-          list.push({ id: 't_chore_' + chore.id + '_' + Date.now(), choreId: chore.id, name: chore.name, dueDate: '', isFocus: false, completed: false, completedAt: null, skipOnHoliday: false, weekendOnly: false, isWork: false });
-        }
-      });
 
     const weekendOrHoliday = isWeekendOrHoliday(onDate, holiday);
     const isWeekday = !weekendOrHoliday;
 
+    // A fresh random three from the bank each day. Anything with a deadline, and
+    // overdue chores, belong to "Needs attention" instead (you clear those by
+    // choosing: Focus, or send to the weekend), and anything already on the
+    // This week list is already planned — so none of those are drawn here.
     const bankItems = list.filter(
-      (t) => t.name.trim() && !t.isFocus && !t.completed && !t.longTerm && !(holiday && t.skipOnHoliday) && !(t.weekendOnly && !weekendOrHoliday) && !isSnoozed(t) && !(choreOf(t) && isSnoozed(choreOf(t)))
+      (t) =>
+        t.name.trim() && !t.isFocus && !t.weekFocus && !t.completed && !t.longTerm && !t.dueDate && !t.choreId &&
+        !(holiday && t.skipOnHoliday) && !(t.weekendOnly && !weekendOrHoliday) && !isSnoozed(t)
     );
 
-    const withDeadline = bankItems.filter((t) => t.dueDate).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
-    const overdueChoreItems = shuffle(bankItems.filter((t) => !t.dueDate && t.choreId));
-    const workItems = isWeekday ? shuffle(bankItems.filter((t) => !t.dueDate && !t.choreId && t.isWork)) : [];
-    const restItems = shuffle(bankItems.filter((t) => !t.dueDate && !t.choreId && !(isWeekday && t.isWork)));
+    // Weekday rule: work tasks come first on weekdays, then the rest; otherwise
+    // it's a plain random draw.
+    const workItems = isWeekday ? shuffle(bankItems.filter((t) => t.isWork)) : [];
+    const restItems = shuffle(bankItems.filter((t) => !(isWeekday && t.isWork)));
+    const ranked = [...workItems, ...restItems];
 
-    const ranked = [...withDeadline, ...overdueChoreItems, ...workItems, ...restItems];
-
+    // Tasks you typed straight into Today stay put and don't count toward the three.
+    const pulledCount = () => list.filter((t) => t.isFocus && !t.completed && !t.addedHere).length;
     for (const candidate of ranked) {
-      const activeCount = list.filter((t) => t.isFocus && !t.completed).length;
-      if (activeCount >= 3) break;
+      if (pulledCount() >= 3) break;
       list = list.map((t) => (t.id === candidate.id ? { ...t, isFocus: true } : t));
     }
 
@@ -445,7 +432,10 @@ export default function PlannerApp({ user, signOut }) {
     const thisMonth = monthKeyOf(nowIso);
     setOfficeDays((prev) => prev.filter((d) => d.startsWith(thisMonth)));
 
-    let nextTodos = todos.map((t) => (t.isFocus && t.completed ? { ...t, isFocus: false } : t));
+    // Nothing pulled in from the bank carries over: yesterday's items go back to the
+    // list and a fresh three are drawn below. Tasks typed straight into the Today
+    // list stay until they're done.
+    let nextTodos = todos.map((t) => (t.isFocus && (t.completed || !t.addedHere) ? { ...t, isFocus: false } : t));
     if (isHolidayMode) {
       // Tasks (and chore reminders) set to pause on holiday don't carry over.
       const pausedChoreIds = new Set(chores.filter((c) => c.skipOnHoliday).map((c) => c.id));
@@ -475,7 +465,7 @@ export default function PlannerApp({ user, signOut }) {
     }
     setDayIsHoliday(isHolidayMode);
 
-    nextTodos = autoFillFocus(nextTodos, target, isHolidayMode, nextChores);
+    nextTodos = autoFillFocus(nextTodos, target, isHolidayMode);
 
     setTodos(nextTodos);
   }
@@ -675,6 +665,11 @@ export default function PlannerApp({ user, signOut }) {
     });
   }
 
+  // Dropping a habit on a tab in Manage: it leaves any group and lands on that tab.
+  function moveHabitToTab(id, tabId) {
+    setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, groupId: null, tabId } : h)));
+  }
+
   // ---- Tabs ----
   // Deleting a tab never deletes habits: everything on it moves to Today.
   function deleteTab(id) {
@@ -756,10 +751,14 @@ export default function PlannerApp({ user, signOut }) {
     };
   }
   function addFocusTodo(name) {
-    setTodos((prev) => [...prev, newTodoFor(name, { isFocus: true })]);
+    setTodos((prev) => [...prev, newTodoFor(name, { isFocus: true, addedHere: true })]);
   }
   function addWeekFocusTodo(name) {
-    setTodos((prev) => [...prev, newTodoFor(name, { weekFocus: true })]);
+    setTodos((prev) => [...prev, newTodoFor(name, { weekFocus: true, addedHere: true })]);
+  }
+  // From the This week list back to Today.
+  function moveWeekToToday(id) {
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, isFocus: true, weekFocus: false, snoozeUntil: null } : t)));
   }
   function removeFromWeekFocus(id) {
     setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, weekFocus: false } : t)));
@@ -785,6 +784,13 @@ export default function PlannerApp({ user, signOut }) {
         return [...prev, { ...newTodoFor(chore.name, { weekFocus: true }), choreId: id }];
       });
     } else {
+      // A task that belongs to a chore snoozes the chore too, or the chore would
+      // just reappear in Needs attention.
+      const linked = todos.find((t) => t.id === id);
+      if (linked && linked.choreId) {
+        snoozeToWeekend('chore', linked.choreId);
+        return;
+      }
       setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, snoozeUntil: until, weekFocus: true, isFocus: false } : t)));
     }
   }
@@ -817,7 +823,7 @@ export default function PlannerApp({ user, signOut }) {
 
   // No hard cap — focus is now just "what I've chosen to work on today."
   function makeFocus(id) {
-    setTodos((prev) => prev.map((t) => (t.id === id && t.name.trim() ? { ...t, isFocus: true } : t)));
+    setTodos((prev) => prev.map((t) => (t.id === id && t.name.trim() ? { ...t, isFocus: true, weekFocus: false, snoozeUntil: null } : t)));
   }
 
 
@@ -828,7 +834,7 @@ export default function PlannerApp({ user, signOut }) {
       const existing = prev.find((t) => t.choreId === chore.id && !t.completed);
       if (existing) {
         if (existing.isFocus) return prev;
-        return prev.map((t) => (t.id === existing.id ? { ...t, isFocus: true } : t));
+        return prev.map((t) => (t.id === existing.id ? { ...t, isFocus: true, weekFocus: false } : t));
       }
       return [
         ...prev,
@@ -930,6 +936,7 @@ export default function PlannerApp({ user, signOut }) {
           onBeginNewWeek={beginNewWeek}
           addWeekFocusTodo={addWeekFocusTodo}
           removeFromWeekFocus={removeFromWeekFocus}
+          moveWeekToToday={moveWeekToToday}
           updateTodoName={updateTodoName}
           deleteTodo={deleteTodo}
           addFocusTodo={addFocusTodo}
@@ -950,6 +957,7 @@ export default function PlannerApp({ user, signOut }) {
           todayTabs={todayTabs}
           setTodayTabs={setTodayTabs}
           deleteTab={deleteTab}
+          moveHabitToTab={moveHabitToTab}
           addGroup={addGroup}
           toggleGroupCollapsed={toggleGroupCollapsed}
           deleteGroup={deleteGroup}

@@ -112,7 +112,7 @@ export default function TodayView({
   groups, toggleGroupCollapsed,
   onBeginNewDay, onBeginNewWeek,
   todayTabs, weekStartedAt,
-  todos, toggleTodo, removeFromFocus, removeFromWeekFocus, makeFocus, focusChore,
+  todos, toggleTodo, removeFromFocus, removeFromWeekFocus, moveWeekToToday, makeFocus, focusChore,
   isHolidayMode, holidayModeOn, holidayEndsAtNewDay, toggleHolidayMode,
   chores, resetChore,
   notes, setNotes, activeNoteId, setActiveNoteId,
@@ -356,6 +356,10 @@ export default function TodayView({
             onToggleCollapsed={() => setTodoCollapsed((prev) => ({ ...prev, [activeTab.id]: !prev[activeTab.id] }))}
             toggleTodo={toggleTodo}
             onRemove={activeTab.todos === 'week' ? removeFromWeekFocus : removeFromFocus}
+            onMoveAcross={activeTab.todos === 'week' ? moveWeekToToday : (id) => snoozeToWeekend('todo', id)}
+            moveAcrossLabel={activeTab.todos === 'week' ? 'Today' : 'Weekend'}
+            MoveAcrossIcon={activeTab.todos === 'week' ? Sparkles : CalendarClock}
+            canMoveAcross={activeTab.todos === 'week' ? true : canSnooze}
             updateTodoName={updateTodoName}
             deleteTodo={deleteTodo}
             addTodo={activeTab.todos === 'week' ? addWeekFocusTodo : addFocusTodo}

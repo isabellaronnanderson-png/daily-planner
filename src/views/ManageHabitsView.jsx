@@ -87,7 +87,7 @@ function ManageRow({ name, badges, skipOnHoliday, dragOver, draggable, onEdit, o
 
 export default function ManageHabitsView({
   habits, addHabit, editHabit, deleteHabit, removeHabitOnly, removeInjectedInstances, reorderHabits,
-  groups, todayTabs, setTodayTabs, deleteTab, addGroup, toggleGroupCollapsed, deleteGroup, moveGroup, renameGroup, reorderGroups,
+  groups, todayTabs, setTodayTabs, deleteTab, moveHabitToTab, addGroup, toggleGroupCollapsed, deleteGroup, moveGroup, renameGroup, reorderGroups,
   weeklyHabits, setWeeklyHabits,
 }) {
   // Tabs organise habits the same way as on the Today view; each tab shows only its own.
@@ -97,6 +97,7 @@ export default function ManageHabitsView({
   const [newTabName, setNewTabName] = useState('');
   const activeTab = todayTabs.find((t) => t.id === tabId) || todayTabs[0];
   const tabIdSet = new Set(todayTabs.map((t) => t.id));
+  const [tabDropId, setTabDropId] = useState(null); // tab pill currently hovered while dragging
 
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
@@ -440,7 +441,24 @@ export default function ManageHabitsView({
 
       <div className="todo-tabs">
         {todayTabs.map((tab) => (
-          <button key={tab.id} className={`todo-tab ${tab.id === activeTab.id ? 'active' : ''}`} onClick={() => setTabId(tab.id)}>
+          <button
+            key={tab.id}
+            className={`todo-tab ${tab.id === activeTab.id ? 'active' : ''} ${tabDropId === tab.id ? 'drop-target' : ''}`}
+            onClick={() => setTabId(tab.id)}
+            // Drag a group (or a loose habit) onto a tab to move it there.
+            onDragOver={(e) => { if (groupDragId || dragId) { e.preventDefault(); setTabDropId(tab.id); } }}
+            onDragLeave={() => setTabDropId(null)}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (groupDragId) moveGroup(groupDragId, null, tab.id);
+              else if (dragId) moveHabitToTab(dragId, tab.id);
+              setGroupDragId(null);
+              setDragId(null);
+              setGroupDragOverId(null);
+              setDragOverId(null);
+              setTabDropId(null);
+            }}
+          >
             {tab.name}
           </button>
         ))}

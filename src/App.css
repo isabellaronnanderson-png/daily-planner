@@ -1926,3 +1926,14 @@ input.todo-inline-input {
 }
 .day-row:hover .todo-group-handle { opacity: 0.7; }
 @media (hover: none) { .todo-group-handle { display: none; } }
+
+/* ===== Today to-do group: pulled-in rows vs typed rows ===== */
+.todo-pulled-row {
+  background: var(--navy-bg);
+  border-left: 3px solid var(--navy);
+}
+.todo-pulled-name { color: var(--navy); font-weight: 500; }
+.todo-pulled-btn { font-size: 11px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.todo-tab.drop-target { background: var(--navy-bg); border-color: var(--navy); border-style: dashed; color: var(--navy); }
+/* Typed fields should share the habit rows' font */
+.today-line-input { font-family: inherit; line-height: inherit; }
