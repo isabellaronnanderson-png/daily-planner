@@ -1,7 +1,13 @@
+import { useState } from 'react';
 import { monthKeyOf, officeCountForMonth, formatMonthKey } from '../lib/officeDays';
-import { flattenGroups } from '../lib/groupTree';
+import { flattenGroups, tabOfItem } from '../lib/groupTree';
 
-export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, groups, weeklyHabits, officeDays = [], currentDate }) {
+export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, groups, todayTabs, weeklyHabits, officeDays = [], currentDate }) {
+  // Habit consistency is split by tab, the same tabs as on the Today view.
+  const [tabId, setTabId] = useState('today');
+  const activeTab = todayTabs.find((t) => t.id === tabId) || todayTabs[0];
+  const tabIdSet = new Set(todayTabs.map((t) => t.id));
+
   const thisMonthKey = monthKeyOf(currentDate || new Date().toISOString());
   const officeThisMonth = officeCountForMonth(officeDays, thisMonthKey);
 
@@ -33,7 +39,14 @@ export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, 
     return null;
   }
 
-  const names = Object.keys(stats);
+  // Which tab a tracked name belongs to now. Names that aren't a current habit
+  // any more (deleted ones) stay with Today, as before.
+  function tabFor(name) {
+    const live = habits.find((h) => h.name === name) || weeklyHabits.find((w) => w.name === name);
+    return live ? tabOfItem(live, groups, tabIdSet) : 'today';
+  }
+
+  const names = Object.keys(stats).filter((n) => tabFor(n) === activeTab.id);
   const byGroup = {};
   const ungrouped = [];
   const knownGroupIds = new Set(groups.map((g) => g.id));
@@ -95,12 +108,22 @@ export default function InsightsView({ habits, habitHistory, weeklyGoalHistory, 
 
       <div className="history-box" style={{ marginBottom: '1.5rem' }}>
         <div className="eyebrow" style={{ marginBottom: 0 }}>Habit consistency</div>
+        <div className="todo-tabs" style={{ marginTop: 10, marginBottom: 4 }}>
+          {todayTabs.map((tab) => (
+            <button key={tab.id} className={`todo-tab ${tab.id === activeTab.id ? 'active' : ''}`} onClick={() => setTabId(tab.id)}>
+              {tab.name}
+            </button>
+          ))}
+        </div>
         {habitHistory.length === 0 && (weeklyGoalHistory || []).length === 0 && (monthlyGoalHistory || []).length === 0 ? (
           <p style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 8 }}>
             Click "Begin a new day" on the Today tab to start tracking your consistency over time.
           </p>
         ) : (
           <>
+            {names.length === 0 && (
+              <p style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 8 }}>Nothing tracked on this tab yet.</p>
+            )}
             {flattenGroups(groups).map(({ group: g, path }) => {
               const list = byGroup[g.id];
               if (!list || list.length === 0) return null;

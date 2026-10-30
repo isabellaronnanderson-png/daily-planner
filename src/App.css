@@ -1937,3 +1937,33 @@ input.todo-inline-input {
 .todo-tab.drop-target { background: var(--navy-bg); border-color: var(--navy); border-style: dashed; color: var(--navy); }
 /* Typed fields should share the habit rows' font */
 .today-line-input { font-family: inherit; line-height: inherit; }
+
+/* ===== Spontaneous to-dos: no box, just like habit rows ===== */
+/* (the global text-input style would otherwise win, so these need to be firm) */
+input.today-line-input {
+  border: none !important;
+  border-radius: 0 !important;
+  background: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+/* The drag handle floats in the row's margin instead of pushing the text over */
+.todo-group-row, .todo-pulled-row { position: relative; }
+.todo-group-handle {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+}
+.todo-pulled-row .todo-group-handle { left: 2px; }
+.drop-hint {
+  padding: 14px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  margin: 8px 12px;
+  text-align: center;
+}

@@ -61,12 +61,13 @@ function daySpecificBadges(w) {
   return badges;
 }
 
-function ManageRow({ name, badges, skipOnHoliday, dragOver, draggable, onEdit, onDelete, onDragStart, onDragOver, onDragLeave, onDrop }) {
+function ManageRow({ name, badges, skipOnHoliday, dragOver, draggable, onEdit, onDelete, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }) {
   return (
     <div
       className={`day-row ${dragOver ? 'drag-over' : ''}`}
       draggable={!!draggable}
       onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
@@ -87,7 +88,7 @@ function ManageRow({ name, badges, skipOnHoliday, dragOver, draggable, onEdit, o
 
 export default function ManageHabitsView({
   habits, addHabit, editHabit, deleteHabit, removeHabitOnly, removeInjectedInstances, reorderHabits,
-  groups, todayTabs, setTodayTabs, deleteTab, moveHabitToTab, addGroup, toggleGroupCollapsed, deleteGroup, moveGroup, renameGroup, reorderGroups,
+  groups, todayTabs, setTodayTabs, deleteTab, moveHabitToTab, addDaySpecific, updateDaySpecific, placeGroup, addGroup, deleteGroup, moveGroup, renameGroup,
   weeklyHabits, setWeeklyHabits,
 }) {
   // Tabs organise habits the same way as on the Today view; each tab shows only its own.
@@ -105,6 +106,26 @@ export default function ManageHabitsView({
   const [addingGroup, setAddingGroup] = useState(false);
   const [groupName, setGroupName] = useState('');
   const [groupDragId, setGroupDragId] = useState(null);
+  const [dsDragId, setDsDragId] = useState(null); // a day-specific habit being dragged
+  // Folding a group here is just for tidying this page — it's separate from
+  // folding it on the Today view, so habits added to a folded Today group don't
+  // vanish from view in Manage (or the other way round).
+  const [foldedIds, setFoldedIds] = useState({});
+  const isFolded = (id) => !!foldedIds[id];
+  const toggleFolded = (id) => setFoldedIds((p) => ({ ...p, [id]: !p[id] }));
+  const clearDrag = () => {
+    setDragId(null);
+    setDragOverId(null);
+    setGroupDragId(null);
+    setGroupDragOverId(null);
+    setDsDragId(null);
+    setTabDropId(null);
+  };
+  const moveDaySpecific = (id, groupId, tabIdForLoose) =>
+    updateDaySpecific(id, {
+      groupId: groupId || null,
+      tabId: groupId ? tabOfGroup(groups, groupId, tabIdSet) : tabIdForLoose,
+    });
   const [groupDragOverId, setGroupDragOverId] = useState(null);
   const [editingGroupId, setEditingGroupId] = useState(null);
   const [groupEditName, setGroupEditName] = useState('');
@@ -171,30 +192,20 @@ export default function ManageHabitsView({
       if (draft.days.length === 0) return;
       const everyNth = parseInt(draft.everyNth, 10) || 1;
       if (isEdit && originalType === 'dayspecific') {
-        setWeeklyHabits(
-          weeklyHabits.map((w) =>
-            w.id === habitModal.id
-              ? { ...w, name: draft.name.trim(), days: draft.days, everyNth, groupId: draft.groupId || null, tabId: draft.tabId, skipOnHoliday: draft.skipOnHoliday }
-              : w
-          )
-        );
+        updateDaySpecific(habitModal.id, { name: draft.name.trim(), days: draft.days, everyNth, groupId: draft.groupId || null, tabId: draft.tabId, skipOnHoliday: draft.skipOnHoliday });
       } else {
         // Creating new, or converting a regular habit into a day-specific one:
         // in the latter case, remove the original so it isn't duplicated.
         if (isEdit && originalType === 'regular') removeHabitOnly(habitModal.id);
-        setWeeklyHabits([
-          ...weeklyHabits,
-          {
-            id: Date.now(),
-            name: draft.name.trim(),
-            days: draft.days,
-            everyNth,
-            groupId: draft.groupId || null,
-            tabId: draft.tabId,
-            skipOnHoliday: draft.skipOnHoliday,
-            occurrenceCount: 0,
-          },
-        ]);
+        addDaySpecific({
+          id: Date.now(),
+          name: draft.name.trim(),
+          days: draft.days,
+          everyNth,
+          groupId: draft.groupId || null,
+          tabId: draft.tabId,
+          skipOnHoliday: draft.skipOnHoliday,
+        });
       }
     } else {
       const targetCount = parseInt(draft.targetCount, 10) || 1;
@@ -236,24 +247,38 @@ export default function ManageHabitsView({
 
   function habitDragProps(h) {
     return {
-      onDragStart: (e) => { e.stopPropagation(); setDragId(h.id); setGroupDragId(null); },
-      onDragOver: (e) => { e.preventDefault(); setDragOverId(h.id); },
+      onDragStart: (e) => { e.stopPropagation(); setDragId(h.id); setGroupDragId(null); setDsDragId(null); },
+      onDragEnd: clearDrag,
+      onDragOver: (e) => { e.preventDefault(); if (dragId || dsDragId) setDragOverId(h.id); },
       onDragLeave: () => setDragOverId(null),
       onDrop: (e) => {
+        if (groupDragId) return; // a group dropped on a row: let the group handle it
         e.stopPropagation();
-        if (dragId) reorderHabits(dragId, h.id, h.groupId || null);
-        setDragId(null);
-        setDragOverId(null);
+        if (dsDragId) moveDaySpecific(dsDragId, groupKeyOf(h), activeTab.id);
+        else if (dragId) reorderHabits(dragId, h.id, groupKeyOf(h), activeTab.id);
+        clearDrag();
       },
     };
   }
+  // Day-specific habits can be dragged to groups, tabs and "ungrouped" too.
+  function daySpecificDragProps(w) {
+    return {
+      draggable: true,
+      onDragStart: (e) => { e.stopPropagation(); setDsDragId(w.id); setDragId(null); setGroupDragId(null); },
+      onDragEnd: clearDrag,
+    };
+  }
+  // The "ungrouped" area: dropping a group here lifts it to the top level of this
+  // tab; a habit dropped here comes out of its group.
   function groupContainerDropProps(groupId) {
     return {
       onDragOver: (e) => e.preventDefault(),
-      onDrop: () => {
-        if (dragId) reorderHabits(dragId, null, groupId || null);
-        setDragId(null);
-        setDragOverId(null);
+      onDrop: (e) => {
+        e.preventDefault();
+        if (groupDragId) moveGroup(groupDragId, null, activeTab.id);
+        else if (dsDragId) moveDaySpecific(dsDragId, groupId, activeTab.id);
+        else if (dragId) reorderHabits(dragId, null, groupId || null, activeTab.id);
+        clearDrag();
       },
     };
   }
@@ -262,7 +287,10 @@ export default function ManageHabitsView({
   const knownGroupIds = new Set(groups.map((g) => g.id));
   const groupKeyOf = (x) => (x.groupId && knownGroupIds.has(x.groupId) ? x.groupId : null);
   function itemsForGroup(groupId) {
-    const regular = habits.filter((h) => groupKeyOf(h) === groupId);
+    // Today's copies of day-specific habits (fromWeekly) are temporary stand-ins
+    // for the schedule listed below — they'd show up here as confusing duplicates
+    // (and dragging or editing a copy changes nothing lasting), so they're left out.
+    const regular = habits.filter((h) => !h.fromWeekly && groupKeyOf(h) === groupId);
     const daySpecific = weeklyHabits.filter((w) => groupKeyOf(w) === groupId);
     return { regular, daySpecific };
   }
@@ -272,23 +300,17 @@ export default function ManageHabitsView({
   }
 
   function handleGroupDrop(group) {
-    if (groupDragId) {
-      // Groups reorder among their siblings; use "Move" to put one inside another.
-      const dragged = groups.find((g) => g.id === groupDragId);
-      if (dragged && (dragged.parentId || null) === (group.parentId || null)) reorderGroups(groupDragId, group.id);
-      setGroupDragId(null);
-    } else if (dragId) {
-      reorderHabits(dragId, null, group.id);
-      setDragId(null);
-      setDragOverId(null);
-    }
-    setGroupDragOverId(null);
+    if (groupDragId) placeGroup(groupDragId, group.id);
+    else if (dsDragId) moveDaySpecific(dsDragId, group.id);
+    else if (dragId) reorderHabits(dragId, null, group.id);
+    clearDrag();
   }
 
   function submitSubgroup(e, parentId) {
     e.preventDefault();
     if (!subName.trim()) return;
     addGroup(subName.trim(), parentId);
+    setFoldedIds((p) => ({ ...p, [parentId]: false }));
     setSubName('');
     setAddingSubFor(null);
   }
@@ -303,7 +325,8 @@ export default function ManageHabitsView({
         className={`day-section ${depth > 0 ? 'day-subsection' : ''} ${groupDragOverId === group.id ? 'group-drag-over' : ''}`}
         key={group.id}
         draggable={editingGroupId !== group.id}
-        onDragStart={(e) => { e.stopPropagation(); setGroupDragId(group.id); setDragId(null); }}
+        onDragStart={(e) => { e.stopPropagation(); setGroupDragId(group.id); setDragId(null); setDsDragId(null); }}
+        onDragEnd={clearDrag}
         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setGroupDragOverId(group.id); }}
         onDragLeave={() => setGroupDragOverId(null)}
         onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleGroupDrop(group); }}
@@ -311,9 +334,9 @@ export default function ManageHabitsView({
         <div className="day-section-header group-header">
           <span
             style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, cursor: 'pointer' }}
-            onClick={() => toggleGroupCollapsed(group.id)}
+            onClick={() => toggleFolded(group.id)}
           >
-            {group.collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+            {isFolded(group.id) ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
             {editingGroupId === group.id ? (
               <input
                 type="text"
@@ -372,7 +395,7 @@ export default function ManageHabitsView({
             <span role="button" tabIndex={0} className="btn-ghost btn-danger" style={{ fontSize: 11 }} onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}>Remove group</span>
           </span>
         </div>
-        {!group.collapsed && (
+        {!isFolded(group.id) && (
           <div className="day-section-body">
             {regular.length + daySpecific.length === 0 && kids.length === 0 && addingSubFor !== group.id && (
               <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '10px 16px' }}>Nothing in this group yet — drag a habit here, or add a subgroup.</p>
@@ -398,6 +421,7 @@ export default function ManageHabitsView({
                 skipOnHoliday={w.skipOnHoliday}
                 onEdit={() => openEditDaySpecific(w)}
                 onDelete={() => setWeeklyHabits(weeklyHabits.filter((x) => x.id !== w.id))}
+                {...daySpecificDragProps(w)}
               />
             ))}
             {addingSubFor === group.id && (
@@ -446,17 +470,14 @@ export default function ManageHabitsView({
             className={`todo-tab ${tab.id === activeTab.id ? 'active' : ''} ${tabDropId === tab.id ? 'drop-target' : ''}`}
             onClick={() => setTabId(tab.id)}
             // Drag a group (or a loose habit) onto a tab to move it there.
-            onDragOver={(e) => { if (groupDragId || dragId) { e.preventDefault(); setTabDropId(tab.id); } }}
+            onDragOver={(e) => { if (groupDragId || dragId || dsDragId) { e.preventDefault(); setTabDropId(tab.id); } }}
             onDragLeave={() => setTabDropId(null)}
             onDrop={(e) => {
               e.preventDefault();
               if (groupDragId) moveGroup(groupDragId, null, tab.id);
+              else if (dsDragId) moveDaySpecific(dsDragId, null, tab.id);
               else if (dragId) moveHabitToTab(dragId, tab.id);
-              setGroupDragId(null);
-              setDragId(null);
-              setGroupDragOverId(null);
-              setDragOverId(null);
-              setTabDropId(null);
+              clearDrag();
             }}
           >
             {tab.name}
@@ -549,8 +570,12 @@ export default function ManageHabitsView({
                 skipOnHoliday={w.skipOnHoliday}
                 onEdit={() => openEditDaySpecific(w)}
                 onDelete={() => setWeeklyHabits(weeklyHabits.filter((x) => x.id !== w.id))}
+                {...daySpecificDragProps(w)}
               />
             ))}
+            {(dragId || dsDragId || groupDragId) && ungrouped.regular.length + ungrouped.daySpecific.length === 0 && (
+              <div className="drop-hint">Drop here to take it out of its group</div>
+            )}
             {ungrouped.regular.length === 0 && ungrouped.daySpecific.length === 0 && tabRoots.length === 0 && (
               <div style={{ padding: 14, fontSize: 12.5, color: 'var(--text-muted)' }}>Nothing on this tab yet — add a habit or a group.</div>
             )}

@@ -570,15 +570,20 @@ export default function PlannerApp({ user, signOut }) {
     }
   }
 
-  function reorderHabits(draggedId, targetId, targetGroupId) {
+  function reorderHabits(draggedId, targetId, targetGroupId, targetTabId = null) {
     const dragged = habits.find((h) => h.id === draggedId);
+    // A habit in a group lives on the group's tab; a loose one lives on the tab
+    // it was dropped on. (Not updating this used to leave a stale tab behind, so
+    // a habit could jump to another tab or vanish from Today.)
+    const tabIdSet = new Set(todayTabs.map((t) => t.id));
 
     setHabits((prev) => {
       const draggedIdx = prev.findIndex((h) => h.id === draggedId);
       if (draggedIdx === -1) return prev;
       const list = [...prev];
       const [removed] = list.splice(draggedIdx, 1);
-      const updatedDragged = { ...removed, groupId: targetGroupId || null };
+      const destTab = targetGroupId ? tabOfGroup(groups, targetGroupId, tabIdSet) : targetTabId || removed.tabId || 'today';
+      const updatedDragged = { ...removed, groupId: targetGroupId || null, tabId: destTab };
 
       if (targetId) {
         const toIdx = list.findIndex((h) => h.id === targetId);
@@ -665,6 +670,53 @@ export default function PlannerApp({ user, signOut }) {
     });
   }
 
+  // ---- Day-specific habits (the ones with their own weekday schedule) ----
+  // They normally appear when "New day" reaches a matching weekday, which made a
+  // freshly-added one look like it hadn't worked. So if it's due on the day
+  // that's open right now, its copy is put on the list straight away, and edits
+  // (name, group, tab) carry over to today's copy.
+  function instanceFor(w) {
+    return {
+      id: 'wh_' + w.id + '_' + Date.now(),
+      name: w.name,
+      completed: false,
+      count: 0,
+      targetCount: 1,
+      groupId: w.groupId || null,
+      tabId: w.tabId || null,
+      fromWeekly: true,
+      weeklyHabitId: w.id,
+      skipOnHoliday: !!w.skipOnHoliday,
+    };
+  }
+  function addDaySpecific(w) {
+    const scheduled = w.days.includes(WEEKDAY_KEYS[new Date(currentDate).getDay()]);
+    const occurrenceCount = scheduled ? 1 : 0;
+    const due = scheduled && occurrenceCount % (w.everyNth || 1) === 0 && !(holidayActive && w.skipOnHoliday);
+    setWeeklyHabits((prev) => [...prev, { ...w, occurrenceCount }]);
+    if (due) setHabits((prev) => [...prev, instanceFor(w)]);
+  }
+  function updateDaySpecific(id, patch) {
+    const w = weeklyHabits.find((x) => x.id === id);
+    if (!w) return;
+    const next = { ...w, ...patch };
+    setWeeklyHabits((prev) => prev.map((x) => (x.id === id ? next : x)));
+    if (habits.some((h) => h.fromWeekly && h.weeklyHabitId === id)) {
+      setHabits((prev) =>
+        prev.map((h) =>
+          h.fromWeekly && h.weeklyHabitId === id
+            ? { ...h, name: next.name, groupId: next.groupId || null, tabId: next.tabId || null, skipOnHoliday: !!next.skipOnHoliday }
+            : h
+        )
+      );
+    } else {
+      const scheduled = next.days.includes(WEEKDAY_KEYS[new Date(currentDate).getDay()]);
+      if (scheduled && (next.everyNth || 1) === 1 && !(holidayActive && next.skipOnHoliday)) {
+        setHabits((prev) => [...prev, instanceFor(next)]);
+      }
+    }
+  }
+
   // Dropping a habit on a tab in Manage: it leaves any group and lands on that tab.
   function moveHabitToTab(id, tabId) {
     setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, groupId: null, tabId } : h)));
@@ -684,8 +736,26 @@ export default function PlannerApp({ user, signOut }) {
     if (!newName.trim()) return;
     setGroups(groups.map((g) => (g.id === id ? { ...g, name: newName.trim() } : g)));
   }
-  function reorderGroups(draggedId, targetId) {
-    setGroups((prev) => reorderById(prev, draggedId, targetId));
+  // Dropping a group on another group puts it right before that group, as a
+  // sibling of it — so a group can be reordered, lifted out of its parent, or
+  // moved to another level by dropping it where you want it. A group can't be
+  // dropped onto one of its own subgroups.
+  function placeGroup(draggedId, targetId) {
+    const tabIdSet = new Set(todayTabs.map((t) => t.id));
+    setGroups((prev) => {
+      const dragged = prev.find((g) => g.id === draggedId);
+      const target = prev.find((g) => g.id === targetId);
+      if (!dragged || !target || draggedId === targetId) return prev;
+      if (descendantIds(prev, draggedId).has(targetId)) return prev;
+      const newParent = target.parentId && prev.some((g) => g.id === target.parentId) ? target.parentId : null;
+      const destTab = tabOfGroup(prev, targetId, tabIdSet);
+      const moved = { ...dragged, parentId: newParent };
+      if (newParent) delete moved.tabId;
+      else moved.tabId = destTab;
+      const arr = prev.filter((g) => g.id !== draggedId);
+      arr.splice(arr.findIndex((g) => g.id === targetId), 0, moved);
+      return arr;
+    });
   }
 
   // ---- Todo actions (lifted so both Today and To-do tabs share one source of truth) ----
@@ -958,12 +1028,13 @@ export default function PlannerApp({ user, signOut }) {
           setTodayTabs={setTodayTabs}
           deleteTab={deleteTab}
           moveHabitToTab={moveHabitToTab}
+          addDaySpecific={addDaySpecific}
+          updateDaySpecific={updateDaySpecific}
+          placeGroup={placeGroup}
           addGroup={addGroup}
-          toggleGroupCollapsed={toggleGroupCollapsed}
           deleteGroup={deleteGroup}
           moveGroup={moveGroup}
           renameGroup={renameGroup}
-          reorderGroups={reorderGroups}
           weeklyHabits={weeklyHabits}
           setWeeklyHabits={setWeeklyHabits}
         />
@@ -996,6 +1067,7 @@ export default function PlannerApp({ user, signOut }) {
           monthlyGoalHistory={monthlyGoalHistory}
           todos={todos}
           groups={groups}
+          todayTabs={todayTabs}
           weeklyHabits={weeklyHabits}
           officeDays={officeDays}
           currentDate={currentDate}
