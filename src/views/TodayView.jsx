@@ -1,16 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
-import { Square, ChevronDown, ChevronRight, Sparkles, CalendarDays, CalendarClock, X } from 'lucide-react';
+import { Square, ChevronDown, ChevronRight, CalendarDays, CalendarClock, ArrowDown, X } from 'lucide-react';
 import CalendarPopover from '../components/CalendarPopover';
 import PastDaySheet from '../components/PastDaySheet';
 import DoneHabits from '../components/DoneHabits';
 import DailyNote from '../components/DailyNote';
 import TodayTodos from '../components/TodayTodos';
+import WeekPlan from '../components/WeekPlan';
 import OneOffAdd from '../components/OneOffAdd';
 import NotesWidget from '../components/NotesWidget';
 import { localDateKey, monthKeyOf, officeCountForMonth } from '../lib/officeDays';
 import { childrenOf, tabOfGroup, tabOfItem } from '../lib/groupTree';
 import { formatWeekRange } from '../lib/todayTabs';
 import { weekKeyFor } from '../lib/cycles';
+import { needsAttention } from '../lib/needsAttention';
+import { planDays, dayKeyOfDate, nextDayKey } from '../lib/weekPlan';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
 // "New day" jumps to the actual current day. The small calendar button beside
@@ -59,16 +62,6 @@ function NewDayButton({ onBeginNewDay, onLogPastDay, currentDate }) {
   );
 }
 
-function isChoreOverdue(chore) {
-  const totalGoalMs = chore.freqVal * (chore.freqUnit === 'weeks' ? 7 : chore.freqUnit === 'months' ? 30 : 1) * 24 * 60 * 60 * 1000;
-  return Date.now() - chore.lastDone >= totalGoalMs;
-}
-function choreDaysOverdue(chore) {
-  const totalGoalMs = chore.freqVal * (chore.freqUnit === 'weeks' ? 7 : chore.freqUnit === 'months' ? 30 : 1) * 24 * 60 * 60 * 1000;
-  const passed = Date.now() - chore.lastDone;
-  return Math.floor((passed - totalGoalMs) / (24 * 60 * 60 * 1000));
-}
-
 // onRemove is only passed for one-off "just for today" items, which are
 // otherwise drawn exactly like habits.
 function TodayHabitRow({ habit, setHabitCount, onRemove }) {
@@ -112,14 +105,15 @@ export default function TodayView({
   groups, toggleGroupCollapsed,
   onBeginNewDay, onBeginNewWeek,
   todayTabs, weekStartedAt,
-  todos, toggleTodo, removeFromFocus, removeFromWeekFocus, moveWeekToToday, makeFocus, focusChore,
+  todos, toggleTodo, removeFromFocus, removeFromWeekFocus,
   isHolidayMode, holidayModeOn, holidayEndsAtNewDay, toggleHolidayMode,
-  chores, resetChore,
+  chores,
   notes, setNotes, activeNoteId, setActiveNoteId,
   dailyNoteText, setDailyNoteText, dailyNoteImage, setDailyNoteImage,
   dailyPriorities, setDailyPriorities,
   todayLines, setTodayLines,
-  updateTodoName, deleteTodo, addFocusTodo, addWeekFocusTodo, reorderFocusTodos, snoozeToWeekend,
+  updateTodoName, deleteTodo, addFocusTodo, reorderFocusTodos, sendToDay,
+  addPlanTodo, moveToDay, dropOnRow, rerollPlanItem, fillBlankDays, onOpenTodo,
   officeDays, setOfficeDays, toggleOfficeDay, currentDate, weeklyHabits,
   habitHistory, setHabitHistory,
   weeklyGoalHistory, setWeeklyGoalHistory,
@@ -139,8 +133,6 @@ export default function TodayView({
   const inTab = (x) => tabOfItem(x, groups, tabIdSet) === activeTab.id;
 
   const focusItems = todos.filter((t) => t.isFocus && !t.completed);
-  const weekItems = todos.filter((t) => t.weekFocus && !t.completed);
-  const todoItems = activeTab.todos === 'week' ? weekItems : focusItems;
 
   // Hide a habit the moment it's completed — it reappears next time its
   // cadence brings it back around, instead of sitting there struck-through.
@@ -207,21 +199,11 @@ export default function TodayView({
     );
   }
 
-  // ---- Needs attention (Today tab only) ----
-  // Items already in Today's focus are handled, so they drop out of here. Items
-  // sent to "this weekend" stay out until that Saturday. The weekend button
-  // only shows Mon–Fri (on a weekend or holiday they're simply due).
-  const todayKey = localDateKey(new Date().toISOString());
-  const isSnoozed = (item) => !!item.snoozeUntil && item.snoozeUntil > todayKey;
-  const canSnooze = !isHolidayMode && ![0, 6].includes(new Date().getDay());
-  const choreInFocus = (c) => todos.some((t) => t.choreId === c.id && !t.completed && t.isFocus);
-
-  const overdueChores = chores.filter((c) => isChoreOverdue(c) && !(isHolidayMode && c.skipOnHoliday) && !isSnoozed(c) && !choreInFocus(c));
-  const urgentTodos = todos
-    .filter((t) => !t.completed && t.dueDate && !isSnoozed(t) && !t.isFocus)
-    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
-    .slice(0, 3);
-  const showBanner = isMainDay && (overdueChores.length > 0 || urgentTodos.length > 0);
+  // ---- Needs attention ----
+  // The full panel now lives at the top of the To-do tab. Here there's just a
+  // quiet count you can open when you want to look.
+  const attention = needsAttention({ chores, todos, isHolidayMode });
+  const attentionCount = attention.overdueChores.length + attention.urgentTodos.length;
 
   // ---- This week ----
   const weekRef = weekStartedAt || currentDate;
@@ -233,6 +215,23 @@ export default function TodayView({
   }
 
   const nothingLeft = visibleHabits.length === 0 && visibleLines.length === 0;
+
+  // The week plan (This week tab) and its mirror on the Today tab: whatever is
+  // planned for today's day of the week shows in Today's to-do group too (same
+  // tasks, not copies), as long as the plan is for the current week.
+  const days = planDays(weekRef);
+  const realTodayKey = localDateKey(new Date().toISOString());
+  const todayDay = dayKeyOfDate(new Date());
+  const plannedToday = weekIsStale ? [] : todos.filter((t) => t.weekFocus && !t.completed && t.planDay === todayDay);
+  const todayTodoItems = [...focusItems, ...plannedToday];
+  const canSendToWeekend = !isHolidayMode && ![0, 6].includes(new Date().getDay());
+  function todayMoveAction(todo) {
+    if (todo.weekFocus) {
+      const next = nextDayKey(todo.planDay);
+      return next ? { label: 'Tomorrow', Icon: ArrowDown, onClick: () => moveToDay(todo.id, next) } : null;
+    }
+    return canSendToWeekend ? { label: 'Weekend', Icon: CalendarClock, onClick: () => sendToDay('todo', todo.id, 'sat') } : null;
+  }
 
   return (
     <div className="view">
@@ -292,77 +291,43 @@ export default function TodayView({
         </div>
       )}
 
-      {showBanner && (
-        <div className="banner">
-          <h3>Needs attention</h3>
-          {overdueChores.map((chore) => {
-            const existing = todos.find((t) => t.choreId === chore.id && !t.completed);
-            const daysOverdue = choreDaysOverdue(chore);
-            return (
-              <div className="suggestion-pill" key={chore.id}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{chore.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--red-light)' }}>
-                    {daysOverdue >= 1 ? `${daysOverdue}d overdue` : 'Chore is due'}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="btn" onClick={() => focusChore(chore)}>
-                    <Sparkles size={12} /> Focus
-                  </button>
-                  {canSnooze && (
-                    <button className="btn" onClick={() => snoozeToWeekend('chore', chore.id)} title="Hide this until the weekend and add it to This week">
-                      <CalendarClock size={12} /> This weekend
-                    </button>
-                  )}
-                  <button
-                    className="btn"
-                    onClick={() => {
-                      if (existing) toggleTodo(existing.id);
-                      else resetChore(chore.id);
-                    }}
-                  >
-                    Mark done
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-          {urgentTodos.map((task) => (
-            <div className="suggestion-pill" key={task.id}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{task.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--red)' }}>Due {task.dueDate}</div>
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {canSnooze && (
-                  <button className="btn" onClick={() => snoozeToWeekend('todo', task.id)} title="Hide this until the weekend and add it to This week">
-                    <CalendarClock size={12} /> This weekend
-                  </button>
-                )}
-                <button className="btn" onClick={() => makeFocus(task.id)}><Sparkles size={12} /> Focus</button>
-              </div>
-            </div>
-          ))}
-        </div>
+      {isMainDay && attentionCount > 0 && (
+        <button className="attention-chip" onClick={onOpenTodo}>
+          {attentionCount} {attentionCount === 1 ? 'thing waits' : 'things wait'} in your to-do list ›
+        </button>
+      )}
+
+      {activeTab.todos === 'week' && (
+        <WeekPlan
+          days={days}
+          todos={todos}
+          todayKey={realTodayKey}
+          staleNote={weekIsStale ? 'This plan is for an earlier week — press “Begin a new week” to start a fresh one.' : null}
+          toggleTodo={toggleTodo}
+          updateTodoName={updateTodoName}
+          deleteTodo={deleteTodo}
+          addPlanTodo={addPlanTodo}
+          moveToDay={moveToDay}
+          dropOnRow={dropOnRow}
+          removeFromPlan={removeFromWeekFocus}
+          rerollPlanItem={rerollPlanItem}
+          fillBlankDays={fillBlankDays}
+        />
       )}
 
       <div className="day-list-outer">
-        {activeTab.todos && (
+        {isMainDay && (
           <TodayTodos
             title="To-do"
-            items={todoItems}
+            items={todayTodoItems}
             collapsed={!!todoCollapsed[activeTab.id]}
             onToggleCollapsed={() => setTodoCollapsed((prev) => ({ ...prev, [activeTab.id]: !prev[activeTab.id] }))}
             toggleTodo={toggleTodo}
-            onRemove={activeTab.todos === 'week' ? removeFromWeekFocus : removeFromFocus}
-            onMoveAcross={activeTab.todos === 'week' ? moveWeekToToday : (id) => snoozeToWeekend('todo', id)}
-            moveAcrossLabel={activeTab.todos === 'week' ? 'Today' : 'Weekend'}
-            MoveAcrossIcon={activeTab.todos === 'week' ? Sparkles : CalendarClock}
-            canMoveAcross={activeTab.todos === 'week' ? true : canSnooze}
+            onRemove={(todo) => (todo.weekFocus ? removeFromWeekFocus(todo.id) : removeFromFocus(todo.id))}
+            moveAction={todayMoveAction}
             updateTodoName={updateTodoName}
             deleteTodo={deleteTodo}
-            addTodo={activeTab.todos === 'week' ? addWeekFocusTodo : addFocusTodo}
+            addTodo={addFocusTodo}
             reorderFocusTodos={reorderFocusTodos}
           />
         )}

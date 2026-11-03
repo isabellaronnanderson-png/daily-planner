@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { Check, X, Sparkles, Plane, Sun, CalendarDays, CalendarRange, Flag, FolderInput, Plus } from 'lucide-react';
 import CalendarPopover from '../components/CalendarPopover';
 import { localDateKey } from '../lib/officeDays';
+import NeedsAttention from '../components/NeedsAttention';
+import { needsAttention } from '../lib/needsAttention';
 import { catIdOf, subIdOf } from '../lib/todoCategories';
 
 function IconToggle({ active, onClick, icon: Icon, label, activeColor = 'var(--navy)' }) {
@@ -233,6 +235,7 @@ function TodoSection({ title, items, toggleTodo, updateName, setDueDate, toggleS
 export default function TodoView({
   todos, setTodos, toggleTodo, deleteTodo, makeFocus, removeFromFocus,
   toggleTodoSkipHoliday, toggleTodoWeekendOnly, toggleWeekFocus,
+  chores, resetChore, focusChore, sendToDay, planDays, isHolidayMode,
   todoCategories: categories, setTodoCategories,
 }) {
   const [activeCatId, setActiveCatId] = useState(null);
@@ -361,6 +364,17 @@ export default function TodoView({
       <div className="section-row">
         <h2 className="section-title">To-do</h2>
       </div>
+
+      <NeedsAttention
+        data={needsAttention({ chores, todos, isHolidayMode })}
+        todos={todos}
+        focusChore={focusChore}
+        makeFocus={makeFocus}
+        toggleTodo={toggleTodo}
+        resetChore={resetChore}
+        sendToDay={sendToDay}
+        planDays={planDays}
+      />
 
       <div className="todo-tabs">
         {categories.map((cat) => (

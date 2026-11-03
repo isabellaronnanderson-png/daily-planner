@@ -12,6 +12,7 @@ import { weekKeyFor, monthIndexFor, daysBetween } from './lib/cycles';
 import { DEFAULT_TODO_CATEGORIES, defaultCategory } from './lib/todoCategories';
 import { descendantIds, tabOfGroup, tabOfItem } from './lib/groupTree';
 import { DEFAULT_TODAY_TABS, PROTECTED_TAB_IDS, periodOfTab } from './lib/todayTabs';
+import { planDays, isWeekendKey, dayKeyOfDate } from './lib/weekPlan';
 import './App.css';
 
 const DEFAULT_TAB_ORDER = ['habits', 'manage', 'todo', 'chores', 'insights'];
@@ -255,9 +256,6 @@ export default function PlannerApp({ user, signOut }) {
     return day === 0 || day === 6 || holiday;
   }
 
-  // Draws a fresh random three from the bank each New day (see autoFillFocus
-  // below). Skips holiday-paused tasks while on holiday, and weekend-only tasks
-  // except on an actual weekend; on weekdays work tasks come first.
   function shuffle(arr) {
     const a = [...arr];
     for (let i = a.length - 1; i > 0; i--) {
@@ -267,47 +265,22 @@ export default function PlannerApp({ user, signOut }) {
     return a;
   }
 
-  // Pulls up to 3 tasks from the bank into focus. Anything with a deadline
-  // goes first (soonest due date wins), then overdue chores, then — on
-  // weekdays only — work tasks get priority, then everything else is
-  // picked at random so it's not always the same tasks resurfacing. Skips
-  // holiday-paused tasks while on holiday, and weekend-only tasks except on
-  // an actual weekend. Only tops up to 3 total — never removes anything
-  // already carried over or added by hand.
-  function autoFillFocus(todosList, onDate = new Date(), holiday = holidayActive) {
-    let list = [...todosList];
-
-    // Anything sent to "this weekend" stays out of the daily pull until then.
-    const dateKey = localDateKey(onDate.toISOString());
-    const isSnoozed = (x) => !!x.snoozeUntil && x.snoozeUntil > dateKey;
-
-    const weekendOrHoliday = isWeekendOrHoliday(onDate, holiday);
-    const isWeekday = !weekendOrHoliday;
-
-    // A fresh random three from the bank each day. Anything with a deadline, and
-    // overdue chores, belong to "Needs attention" instead (you clear those by
-    // choosing: Focus, or send to the weekend), and anything already on the
-    // This week list is already planned — so none of those are drawn here.
-    const bankItems = list.filter(
+  // Picks one random task from the bank for a day of the week plan. Tasks with a
+  // deadline, overdue chores and anything already planned or in Today are left
+  // alone (the first two wait in "Needs attention"). Weekend-only tasks are only
+  // offered for Saturday/Sunday, holiday-paused ones are skipped while on
+  // holiday, and work tasks are preferred on weekdays (personal ones on weekends).
+  function drawForDay(list, day) {
+    const weekend = isWeekendKey(day.key);
+    const pool = list.filter(
       (t) =>
         t.name.trim() && !t.isFocus && !t.weekFocus && !t.completed && !t.longTerm && !t.dueDate && !t.choreId &&
-        !(holiday && t.skipOnHoliday) && !(t.weekendOnly && !weekendOrHoliday) && !isSnoozed(t)
+        !(holidayActive && t.skipOnHoliday) && !(t.weekendOnly && !weekend) &&
+        !(t.snoozeUntil && t.snoozeUntil > day.dateKey)
     );
-
-    // Weekday rule: work tasks come first on weekdays, then the rest; otherwise
-    // it's a plain random draw.
-    const workItems = isWeekday ? shuffle(bankItems.filter((t) => t.isWork)) : [];
-    const restItems = shuffle(bankItems.filter((t) => !(isWeekday && t.isWork)));
-    const ranked = [...workItems, ...restItems];
-
-    // Tasks you typed straight into Today stay put and don't count toward the three.
-    const pulledCount = () => list.filter((t) => t.isFocus && !t.completed && !t.addedHere).length;
-    for (const candidate of ranked) {
-      if (pulledCount() >= 3) break;
-      list = list.map((t) => (t.id === candidate.id ? { ...t, isFocus: true } : t));
-    }
-
-    return list;
+    const preferred = pool.filter((t) => (weekend ? !t.isWork : t.isWork));
+    const pickFrom = preferred.length > 0 ? preferred : pool;
+    return pickFrom.length > 0 ? shuffle(pickFrom)[0] : null;
   }
 
   function beginNewDay() {
@@ -464,8 +437,6 @@ export default function PlannerApp({ user, signOut }) {
       setHolidayStartedAt(null);
     }
     setDayIsHoliday(isHolidayMode);
-
-    nextTodos = autoFillFocus(nextTodos, target, isHolidayMode);
 
     setTodos(nextTodos);
   }
@@ -772,7 +743,7 @@ export default function PlannerApp({ user, signOut }) {
         if (t.id !== id) return t;
         const nextDone = !t.completed;
         if (nextDone && t.choreId) resetChore(t.choreId);
-        return { ...t, completed: nextDone, completedAt: nextDone ? Date.now() : null, isFocus: false, weekFocus: false };
+        return { ...t, completed: nextDone, completedAt: nextDone ? Date.now() : null, isFocus: false };
       })
     );
   }
@@ -823,46 +794,87 @@ export default function PlannerApp({ user, signOut }) {
   function addFocusTodo(name) {
     setTodos((prev) => [...prev, newTodoFor(name, { isFocus: true, addedHere: true })]);
   }
-  function addWeekFocusTodo(name) {
-    setTodos((prev) => [...prev, newTodoFor(name, { weekFocus: true, addedHere: true })]);
-  }
-  // From the This week list back to Today.
-  function moveWeekToToday(id) {
-    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, isFocus: true, weekFocus: false, snoozeUntil: null } : t)));
-  }
-  function removeFromWeekFocus(id) {
-    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, weekFocus: false } : t)));
-  }
-  function toggleWeekFocus(id) {
-    setTodos((prev) => prev.map((t) => (t.id === id && t.name.trim() ? { ...t, weekFocus: !t.weekFocus } : t)));
-  }
 
-  // "Do this weekend": hides a chore or task from Needs attention (and from
-  // the daily pull) until the coming Saturday, when it comes back — and puts
-  // it on the This week list in the meantime.
-  function snoozeToWeekend(kind, id) {
-    const d = new Date();
-    d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7));
-    const until = localDateKey(d.toISOString());
+  // ---- The week plan (Monday–Sunday, one section per day) ----
+  const weekPlanDays = planDays(weekStartedAt || currentDate);
+  const todayDayKey = dayKeyOfDate(new Date());
+
+  // Something you wrote straight into a day of the plan.
+  function addPlanTodo(name, dayKey) {
+    setTodos((prev) => [...prev, newTodoFor(name, { weekFocus: true, planDay: dayKey, addedHere: true })]);
+  }
+  function moveToDay(id, dayKey) {
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, weekFocus: true, planDay: dayKey, isFocus: false } : t)));
+  }
+  // Dropping a task onto another task: it joins that task's day, just before it.
+  function dropOnRow(draggedId, targetId) {
+    setTodos((prev) => {
+      const target = prev.find((t) => t.id === targetId);
+      if (!target || !target.planDay) return prev;
+      const moved = prev.map((t) => (t.id === draggedId ? { ...t, weekFocus: true, planDay: target.planDay, isFocus: false } : t));
+      return reorderById(moved, draggedId, targetId);
+    });
+  }
+  // Takes a task out of the plan and back to the bank.
+  function removeFromWeekFocus(id) {
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, weekFocus: false, planDay: null, snoozeUntil: null } : t)));
+  }
+  // The little calendar icon on the To-do tab: puts a task on today's day of the
+  // plan (or takes it off again).
+  function toggleWeekFocus(id) {
+    setTodos((prev) =>
+      prev.map((t) => {
+        if (t.id !== id || !t.name.trim()) return t;
+        return t.weekFocus
+          ? { ...t, weekFocus: false, planDay: null }
+          : { ...t, weekFocus: true, planDay: todayDayKey, isFocus: false };
+      })
+    );
+  }
+  // Plans a chore or task onto a day of the week — the way to clear it from
+  // "Needs attention" without doing it today. A chore gets a to-do of its own
+  // (found or created in one step) so ticking it off resets the chore.
+  function sendToDay(kind, id, dayKey) {
     if (kind === 'chore') {
-      setChores((prev) => prev.map((c) => (c.id === id ? { ...c, snoozeUntil: until } : c)));
       const chore = chores.find((c) => c.id === id);
       setTodos((prev) => {
         const existing = prev.find((t) => t.choreId === id && !t.completed);
-        if (existing) return prev.map((t) => (t.id === existing.id ? { ...t, weekFocus: true, isFocus: false } : t));
+        if (existing) return prev.map((t) => (t.id === existing.id ? { ...t, weekFocus: true, planDay: dayKey, isFocus: false } : t));
         if (!chore) return prev;
-        return [...prev, { ...newTodoFor(chore.name, { weekFocus: true }), choreId: id }];
+        return [...prev, { ...newTodoFor(chore.name, { weekFocus: true, planDay: dayKey }), choreId: id }];
       });
     } else {
-      // A task that belongs to a chore snoozes the chore too, or the chore would
-      // just reappear in Needs attention.
-      const linked = todos.find((t) => t.id === id);
-      if (linked && linked.choreId) {
-        snoozeToWeekend('chore', linked.choreId);
-        return;
-      }
-      setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, snoozeUntil: until, weekFocus: true, isFocus: false } : t)));
+      moveToDay(id, dayKey);
     }
+  }
+  // Swaps a randomly-pulled task for a different random one (the old one goes
+  // back to the bank).
+  function rerollPlanItem(id) {
+    setTodos((prev) => {
+      const current = prev.find((t) => t.id === id);
+      if (!current || current.addedHere || current.dueDate || current.choreId || !current.planDay) return prev;
+      const day = weekPlanDays.find((d) => d.key === current.planDay);
+      if (!day) return prev;
+      const without = prev.map((t) => (t.id === id ? { ...t, weekFocus: false, planDay: null } : t));
+      const pick = drawForDay(without.filter((t) => t.id !== id), day);
+      if (!pick) return prev;
+      return without.map((t) => (t.id === pick.id ? { ...t, weekFocus: true, planDay: day.key, isFocus: false } : t));
+    });
+  }
+  // The manual random fill: one random bank task for every day that's still
+  // blank — today and the days ahead only, never days that have gone by.
+  function fillBlankDays() {
+    const todayKey = localDateKey(new Date().toISOString());
+    setTodos((prev) => {
+      let list = [...prev];
+      for (const day of weekPlanDays) {
+        if (day.dateKey < todayKey) continue;
+        if (list.some((t) => t.weekFocus && t.planDay === day.key)) continue;
+        const pick = drawForDay(list, day);
+        if (pick) list = list.map((t) => (t.id === pick.id ? { ...t, weekFocus: true, planDay: day.key, isFocus: false } : t));
+      }
+      return list;
+    });
   }
 
   // "Begin a new week" (Monday–Sunday): the weekly-tab counterpart of New day.
@@ -887,13 +899,21 @@ export default function PlannerApp({ user, signOut }) {
       )
     );
     setTodayLines((prev) => prev.filter((l) => periodOfTab(todayTabs, tabOfItem(l, groups, tabIdSet)) !== 'week'));
+    // The week plan starts clean so nothing piles up: whatever you wrote into it is
+    // deleted, finished tasks are filed away, and unfinished tasks pulled from
+    // the bank go back there.
+    setTodos((prev) =>
+      prev
+        .filter((t) => !(t.weekFocus && t.addedHere))
+        .map((t) => (t.weekFocus ? { ...t, weekFocus: false, planDay: null, snoozeUntil: null } : t))
+    );
     setWeekStartedAt(nowIso);
   }
 
 
   // No hard cap — focus is now just "what I've chosen to work on today."
   function makeFocus(id) {
-    setTodos((prev) => prev.map((t) => (t.id === id && t.name.trim() ? { ...t, isFocus: true, weekFocus: false, snoozeUntil: null } : t)));
+    setTodos((prev) => prev.map((t) => (t.id === id && t.name.trim() ? { ...t, isFocus: true, weekFocus: false, planDay: null, snoozeUntil: null } : t)));
   }
 
 
@@ -904,7 +924,7 @@ export default function PlannerApp({ user, signOut }) {
       const existing = prev.find((t) => t.choreId === chore.id && !t.completed);
       if (existing) {
         if (existing.isFocus) return prev;
-        return prev.map((t) => (t.id === existing.id ? { ...t, isFocus: true, weekFocus: false } : t));
+        return prev.map((t) => (t.id === existing.id ? { ...t, isFocus: true, weekFocus: false, planDay: null } : t));
       }
       return [
         ...prev,
@@ -1004,14 +1024,18 @@ export default function PlannerApp({ user, signOut }) {
           todayTabs={todayTabs}
           weekStartedAt={weekStartedAt}
           onBeginNewWeek={beginNewWeek}
-          addWeekFocusTodo={addWeekFocusTodo}
+          addPlanTodo={addPlanTodo}
+          moveToDay={moveToDay}
+          dropOnRow={dropOnRow}
           removeFromWeekFocus={removeFromWeekFocus}
-          moveWeekToToday={moveWeekToToday}
+          rerollPlanItem={rerollPlanItem}
+          fillBlankDays={fillBlankDays}
+          onOpenTodo={() => setActiveTab('todo')}
           updateTodoName={updateTodoName}
           deleteTodo={deleteTodo}
           addFocusTodo={addFocusTodo}
           reorderFocusTodos={reorderFocusTodos}
-          snoozeToWeekend={snoozeToWeekend}
+          sendToDay={sendToDay}
         />
       )}
       {activeTab === 'manage' && (
@@ -1051,9 +1075,14 @@ export default function PlannerApp({ user, signOut }) {
           toggleTodoSkipHoliday={toggleTodoSkipHoliday}
           toggleTodoWeekendOnly={toggleTodoWeekendOnly}
           toggleWeekFocus={toggleWeekFocus}
+          chores={chores}
+          resetChore={resetChore}
+          focusChore={focusChore}
+          sendToDay={sendToDay}
+          planDays={weekPlanDays}
           todoCategories={todoCategories}
           setTodoCategories={setTodoCategories}
-          isHolidayMode={isHolidayMode}
+          isHolidayMode={holidayActive}
         />
       )}
       {activeTab === 'chores' && (

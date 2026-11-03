@@ -10,9 +10,11 @@ import OneOffAdd from './OneOffAdd';
 // The quiet "+ Add a to-do" line at the bottom adds more (Enter keeps going).
 export default function TodayTodos({
   title = 'To-do', items, collapsed, onToggleCollapsed,
-  toggleTodo, onRemove, onMoveAcross, moveAcrossLabel, MoveAcrossIcon, canMoveAcross,
+  toggleTodo, onRemove, moveAction,
   updateTodoName, deleteTodo, addTodo, reorderFocusTodos, addLabel = 'Add a to-do',
 }) {
+  // moveAction(todo) -> { label, Icon, onClick } or null: the "send it elsewhere"
+  // button for a row (to the weekend for today's tasks, to tomorrow for planned ones).
   const rowRefs = useRef({});
   const dragIdRef = useRef(null);
 
@@ -49,8 +51,9 @@ export default function TodayTodos({
 
       {!collapsed && (
         <div className="day-section-body">
-          {items.map((todo, index) =>
-            todo.addedHere ? (
+          {items.map((todo, index) => {
+            const move = moveAction ? moveAction(todo) : null;
+            return todo.addedHere ? (
               // Typed in here: a plain, habit-style row you can edit in place.
               <div className="day-row todo-group-row" key={todo.id} {...dropProps(todo)}>
                 {handle(todo)}
@@ -72,12 +75,12 @@ export default function TodayTodos({
                   onBlur={() => { if (todo.name.trim() === '') deleteTodo(todo.id); }}
                 />
                 {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
-                {canMoveAcross && (
-                  <button className="chore-remove oneoff-remove" onClick={() => onMoveAcross(todo.id)} aria-label={moveAcrossLabel} title={moveAcrossLabel}>
-                    <MoveAcrossIcon size={14} />
+                {move && (
+                  <button className="chore-remove oneoff-remove" onClick={move.onClick} aria-label={move.label} title={move.label}>
+                    <move.Icon size={14} />
                   </button>
                 )}
-                <button className="chore-remove oneoff-remove" onClick={() => onRemove(todo.id)} aria-label="Put back in the to-do list" title="Put back in the to-do list">
+                <button className="chore-remove oneoff-remove" onClick={() => onRemove(todo)} aria-label="Put back in the to-do list" title="Put back in the to-do list">
                   <X size={14} />
                 </button>
                 {checkBtn(todo)}
@@ -88,18 +91,18 @@ export default function TodayTodos({
                 {handle(todo)}
                 <span className="card-label todo-pulled-name" style={{ flex: 1, minWidth: 0 }}>{todo.name}</span>
                 {todo.dueDate && <span className="pill pill-red">Due {todo.dueDate}</span>}
-                {canMoveAcross && (
-                  <button className="btn-ghost todo-pulled-btn" onClick={() => onMoveAcross(todo.id)} title={moveAcrossLabel}>
-                    <MoveAcrossIcon size={12} /> {moveAcrossLabel}
+                {move && (
+                  <button className="btn-ghost todo-pulled-btn" onClick={move.onClick} title={move.label}>
+                    <move.Icon size={12} /> {move.label}
                   </button>
                 )}
-                <button className="btn-ghost btn-danger todo-pulled-btn" onClick={() => onRemove(todo.id)} title="Put back in the to-do list">
+                <button className="btn-ghost btn-danger todo-pulled-btn" onClick={() => onRemove(todo)} title="Put back in the to-do list">
                   Remove
                 </button>
                 {checkBtn(todo)}
               </div>
-            )
-          )}
+            );
+          })}
 
           <OneOffAdd onAdd={addTodo} label={addLabel} />
         </div>
