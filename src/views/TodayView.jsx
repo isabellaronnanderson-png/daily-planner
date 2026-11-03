@@ -230,7 +230,7 @@ export default function TodayView({
       const next = nextDayKey(todo.planDay);
       return next ? { label: 'Tomorrow', Icon: ArrowDown, onClick: () => moveToDay(todo.id, next) } : null;
     }
-    return canSendToWeekend ? { label: 'Weekend', Icon: CalendarClock, onClick: () => sendToDay('todo', todo.id, 'sat') } : null;
+    return canSendToWeekend ? { label: 'Weekend', Icon: CalendarClock, onClick: () => sendToDay('todo', todo.id, 'weekend') } : null;
   }
 
   return (
@@ -312,6 +312,8 @@ export default function TodayView({
           removeFromPlan={removeFromWeekFocus}
           rerollPlanItem={rerollPlanItem}
           fillBlankDays={fillBlankDays}
+          collapsed={!!todoCollapsed.weekplan}
+          onToggleCollapsed={() => setTodoCollapsed((prev) => ({ ...prev, weekplan: !prev.weekplan }))}
         />
       )}
 

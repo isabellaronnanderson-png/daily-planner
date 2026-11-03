@@ -799,6 +799,15 @@ export default function PlannerApp({ user, signOut }) {
   const weekPlanDays = planDays(weekStartedAt || currentDate);
   const todayDayKey = dayKeyOfDate(new Date());
 
+  // Saturday and Sunday are now one "Weekend" day: move anything planned for
+  // either of them there.
+  useEffect(() => {
+    if (todos.some((t) => t.planDay === 'sat' || t.planDay === 'sun')) {
+      setTodos((prev) => prev.map((t) => (t.planDay === 'sat' || t.planDay === 'sun' ? { ...t, planDay: 'weekend' } : t)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todos]);
+
   // Something you wrote straight into a day of the plan.
   function addPlanTodo(name, dayKey) {
     setTodos((prev) => [...prev, newTodoFor(name, { weekFocus: true, planDay: dayKey, addedHere: true })]);
@@ -868,7 +877,7 @@ export default function PlannerApp({ user, signOut }) {
     setTodos((prev) => {
       let list = [...prev];
       for (const day of weekPlanDays) {
-        if (day.dateKey < todayKey) continue;
+        if (day.lastDateKey < todayKey) continue; // days gone by (the weekend counts until Sunday ends)
         if (list.some((t) => t.weekFocus && t.planDay === day.key)) continue;
         const pick = drawForDay(list, day);
         if (pick) list = list.map((t) => (t.id === pick.id ? { ...t, weekFocus: true, planDay: day.key, isFocus: false } : t));

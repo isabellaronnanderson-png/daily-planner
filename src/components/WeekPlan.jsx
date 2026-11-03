@@ -1,30 +1,25 @@
-import { useState, useRef } from 'react';
+import { useRef } from 'react';
 import { Square, Check, GripVertical, ChevronDown, ChevronRight, X, ArrowDown, Shuffle } from 'lucide-react';
 import OneOffAdd from './OneOffAdd';
 import { nextDayKey } from '../lib/weekPlan';
 
-// The week plan on the "This week" tab: one section per day, Monday to Sunday.
-// Write your own lines into a day (Enter keeps going), or press "Fill blank
-// days" to get one random task from the to-do bank for every empty day still
-// ahead. Drag a task onto another day to carry it forward. Tasks pulled from
-// the bank are solid coloured rows; the ones you write look like habit rows.
+// The week plan on the "This week" tab: a banner you can fold away, and under it
+// one section per day — Monday to Friday, then the Weekend. Write your own lines
+// into a day (Enter keeps going), or press "Fill blank days" to get one random
+// task from the to-do bank for every empty day still ahead. Drag a task onto
+// another day to carry it forward. Tasks pulled from the bank are solid coloured
+// rows; the ones you write look like habit rows.
 export default function WeekPlan({
-  days, todos, todayKey, staleNote,
+  days, todos, todayKey, staleNote, collapsed, onToggleCollapsed,
   toggleTodo, updateTodoName, deleteTodo, addPlanTodo,
   moveToDay, dropOnRow, removeFromPlan, rerollPlanItem, fillBlankDays,
 }) {
-  const [openMap, setOpenMap] = useState({});
   const dragIdRef = useRef(null);
 
   const planItems = todos.filter((t) => t.weekFocus);
   const dayKeys = new Set(days.map((d) => d.key));
   const unplaced = planItems.filter((t) => !t.planDay || !dayKeys.has(t.planDay));
-
-  // Days gone by start folded — unless something on them is still unfinished, so
-  // it's in sight to carry forward (drag it down to the next day).
-  const pendingOn = (day) => planItems.filter((t) => t.planDay === day.key && !t.completed).length;
-  const isOpen = (day) => openMap[day.key] ?? (day.dateKey >= todayKey || pendingOn(day) > 0);
-  const toggleOpen = (day) => setOpenMap((m) => ({ ...m, [day.key]: !isOpen(day) }));
+  const pendingCount = planItems.filter((t) => !t.completed).length;
 
   const handle = (todo) => (
     <span className="todo-group-handle" draggable onDragStart={() => { dragIdRef.current = todo.id; }} aria-hidden="true">
@@ -117,54 +112,69 @@ export default function WeekPlan({
 
   return (
     <div className="week-plan">
-      <div className="week-plan-head">
-        <span className="week-plan-hint">{staleNote || 'Write into any day, or drag tasks between days to carry them forward.'}</span>
-        <button className="btn" onClick={fillBlankDays} title="Pick one random task from your to-do list for each blank day still ahead">
-          <Shuffle size={12} /> Fill blank days
-        </button>
-      </div>
-
       <div className="day-list-outer">
-        {unplaced.length > 0 && (
-          <div className="day-section">
-            <div className="day-section-label">Not placed yet</div>
-            <div className="day-section-body">{unplaced.map(renderRow)}</div>
-          </div>
-        )}
-
-        {days.map((day) => {
-          const items = planItems.filter((t) => t.planDay === day.key);
-          const pending = items.filter((t) => !t.completed).length;
-          const isToday = day.dateKey === todayKey;
-          const open = isOpen(day);
-          return (
-            <div
-              className="day-section"
-              key={day.key}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (dragIdRef.current) moveToDay(dragIdRef.current, day.key);
-                dragIdRef.current = null;
-              }}
-            >
-              <button className={`day-section-header ${pending === 0 && !isToday ? 'is-empty' : ''}`} onClick={() => toggleOpen(day)}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                  {day.label}
-                  {isToday && <span className="pill pill-navy">Today</span>}
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({pending})</span>
-                </span>
+        {/* The banner: one fold for the whole plan */}
+        <div className="day-section">
+          <div className="day-section-header group-header">
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={onToggleCollapsed} role="button" tabIndex={0}>
+              {collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+              Week plan
+              <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({pendingCount})</span>
+            </span>
+            {!collapsed && (
+              <button className="btn" onClick={fillBlankDays} title="Pick one random task from your to-do list for each blank day still ahead">
+                <Shuffle size={12} /> Fill blank days
               </button>
-              {open && (
-                <div className="day-section-body">
-                  {items.map(renderRow)}
-                  <OneOffAdd onAdd={(text) => addPlanTodo(text, day.key)} label={`Add for ${day.weekday}`} />
+            )}
+          </div>
+        </div>
+
+        {!collapsed && (
+          <>
+            <div className="week-plan-hint">{staleNote || 'Write into any day, or drag tasks between days to carry them forward.'}</div>
+
+            {unplaced.length > 0 && (
+              <div className="day-section">
+                <div className="day-section-label">Not placed yet</div>
+                <div className="day-section-body">{unplaced.map(renderRow)}</div>
+              </div>
+            )}
+
+            {days.map((day) => {
+              const items = planItems.filter((t) => t.planDay === day.key);
+              const pending = items.filter((t) => !t.completed).length;
+              const isToday = day.dateKeys.includes(todayKey);
+              const isPast = day.lastDateKey < todayKey;
+              return (
+                <div
+                  className="day-section"
+                  key={day.key}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragIdRef.current) moveToDay(dragIdRef.current, day.key);
+                    dragIdRef.current = null;
+                  }}
+                >
+                  <div className={`day-section-header day-static ${isPast && pending === 0 ? 'is-empty' : ''}`}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {day.label}
+                      {isToday && <span className="pill pill-navy">Today</span>}
+                      <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({pending})</span>
+                    </span>
+                  </div>
+                  {/* Days that have gone by with nothing on them stay as a quiet header */}
+                  {(!isPast || items.length > 0) && (
+                    <div className="day-section-body">
+                      {items.map(renderRow)}
+                      {!isPast && <OneOffAdd onAdd={(text) => addPlanTodo(text, day.key)} label={day.addLabel} />}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
+              );
+            })}
+          </>
+        )}
       </div>
     </div>
   );

@@ -10,7 +10,7 @@ export default function NeedsAttention({ data, todos, focusChore, makeFocus, tog
   if (overdueChores.length === 0 && urgentTodos.length === 0) return null;
 
   const todayKey = localDateKey(new Date().toISOString());
-  const upcoming = planDays.filter((d) => d.dateKey >= todayKey);
+  const upcoming = planDays.filter((d) => d.lastDateKey >= todayKey);
 
   // A native picker laid over a button: pick a day and it's planned there.
   function PlanForMenu({ onPick }) {
@@ -21,7 +21,7 @@ export default function NeedsAttention({ data, todos, focusChore, makeFocus, tog
         <select className="move-select" aria-label="Plan for a day" value="" onChange={(e) => e.target.value && onPick(e.target.value)}>
           <option value="">Plan for…</option>
           {upcoming.map((d) => (
-            <option key={d.key} value={d.key}>{d.dateKey === todayKey ? `Today · ${d.label}` : d.label}</option>
+            <option key={d.key} value={d.key}>{d.dateKeys.includes(todayKey) ? `Today · ${d.label}` : d.label}</option>
           ))}
         </select>
       </span>
