@@ -1994,3 +1994,24 @@ input.today-line-input {
 .day-section-header.day-static { cursor: default; }
 .day-section-header.day-static:hover { background: var(--bg); }
 .week-plan .week-plan-hint { padding: 8px 16px; border-bottom: 1px solid var(--border); }
+
+/* Week plan: foldable days with a one-line preview */
+.day-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.day-preview {
+  flex: 1;
+  min-width: 0;
+  margin-left: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-muted);
+}

@@ -1,16 +1,19 @@
 import { useRef } from 'react';
-import { Square, Check, GripVertical, ChevronDown, ChevronRight, X, ArrowDown, Shuffle } from 'lucide-react';
+import { Square, Check, GripVertical, ChevronDown, ChevronRight, X, ArrowDown, Shuffle, Plane } from 'lucide-react';
 import OneOffAdd from './OneOffAdd';
 import { nextDayKey } from '../lib/weekPlan';
 
 // The week plan on the "This week" tab: a banner you can fold away, and under it
-// one section per day — Monday to Friday, then the Weekend. Write your own lines
+// one section per day — Monday to Friday, then the Weekend. Each day folds too
+// (showing a one-line preview of what's on it), and can be marked as a holiday
+// day so "Fill blank days" skips it. Write your own lines
 // into a day (Enter keeps going), or press "Fill blank days" to get one random
 // task from the to-do bank for every empty day still ahead. Drag a task onto
 // another day to carry it forward. Tasks pulled from the bank are solid coloured
 // rows; the ones you write look like habit rows.
 export default function WeekPlan({
-  days, todos, todayKey, staleNote, collapsed, onToggleCollapsed,
+  days, todos, todayKey, staleNote, collapsed, onToggleCollapsed, holidayDays = [], toggleHolidayDay,
+  openMap, setOpenMap, // which days you've opened or folded yourself (kept until a new week)
   toggleTodo, updateTodoName, deleteTodo, addPlanTodo,
   moveToDay, dropOnRow, removeFromPlan, rerollPlanItem, fillBlankDays,
 }) {
@@ -131,7 +134,7 @@ export default function WeekPlan({
 
         {!collapsed && (
           <>
-            <div className="week-plan-hint">{staleNote || 'Write into any day, or drag tasks between days to carry them forward.'}</div>
+            {staleNote && <div className="week-plan-hint">{staleNote}</div>}
 
             {unplaced.length > 0 && (
               <div className="day-section">
@@ -142,9 +145,15 @@ export default function WeekPlan({
 
             {days.map((day) => {
               const items = planItems.filter((t) => t.planDay === day.key);
-              const pending = items.filter((t) => !t.completed).length;
+              const pendingItems = items.filter((t) => !t.completed);
+              const pending = pendingItems.length;
               const isToday = day.dateKeys.includes(todayKey);
               const isPast = day.lastDateKey < todayKey;
+              const onHoliday = holidayDays.includes(day.key);
+              // Open by default: today, and any day gone by with something unfinished
+              // on it (so it's in sight to carry forward). Other days start folded.
+              const open = openMap[day.key] ?? (isToday || (isPast && pending > 0));
+              const preview = pendingItems.map((t) => t.name).filter(Boolean).join(' · ');
               return (
                 <div
                   className="day-section"
@@ -156,15 +165,35 @@ export default function WeekPlan({
                     dragIdRef.current = null;
                   }}
                 >
-                  <div className={`day-section-header day-static ${isPast && pending === 0 ? 'is-empty' : ''}`}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div className={`day-section-header group-header ${pending === 0 && !isToday ? 'is-empty' : ''}`}>
+                    <span
+                      className="day-toggle"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setOpenMap((m) => ({ ...m, [day.key]: !open }))}
+                    >
+                      {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                       {day.label}
                       {isToday && <span className="pill pill-navy">Today</span>}
+                      {onHoliday && <span className="pill pill-muted">Holiday</span>}
                       <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({pending})</span>
+                      {!open && preview && <span className="day-preview">{preview}</span>}
                     </span>
+                    {!isPast && (
+                      <span className="icon-tooltip-wrap">
+                        <button
+                          className="chore-remove"
+                          style={onHoliday ? { color: 'var(--navy)' } : undefined}
+                          onClick={() => toggleHolidayDay(day.key)}
+                          aria-label={onHoliday ? 'On holiday — click to undo' : 'Mark as a holiday day'}
+                        >
+                          <Plane size={14} />
+                        </button>
+                        <span className="icon-tooltip-bubble">{onHoliday ? 'On holiday — click to undo' : 'Mark as a holiday day (Fill blank days skips it)'}</span>
+                      </span>
+                    )}
                   </div>
-                  {/* Days that have gone by with nothing on them stay as a quiet header */}
-                  {(!isPast || items.length > 0) && (
+                  {open && (!isPast || items.length > 0) && (
                     <div className="day-section-body">
                       {items.map(renderRow)}
                       {!isPast && <OneOffAdd onAdd={(text) => addPlanTodo(text, day.key)} label={day.addLabel} />}

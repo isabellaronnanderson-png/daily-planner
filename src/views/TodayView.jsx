@@ -113,7 +113,7 @@ export default function TodayView({
   dailyPriorities, setDailyPriorities,
   todayLines, setTodayLines,
   updateTodoName, deleteTodo, addFocusTodo, reorderFocusTodos, sendToDay,
-  addPlanTodo, moveToDay, dropOnRow, rerollPlanItem, fillBlankDays, onOpenTodo,
+  addPlanTodo, moveToDay, dropOnRow, rerollPlanItem, fillBlankDays, planHolidayDays, togglePlanHoliday, onOpenTodo,
   officeDays, setOfficeDays, toggleOfficeDay, currentDate, weeklyHabits,
   habitHistory, setHabitHistory,
   weeklyGoalHistory, setWeeklyGoalHistory,
@@ -122,6 +122,8 @@ export default function TodayView({
   const [pastDate, setPastDate] = useState(null);
   const [tabId, setTabId] = useState('today');
   const [todoCollapsed, setTodoCollapsed] = useLocalStorage('planner_todo_collapsed', {});
+  // Days of the week plan you've opened/folded by hand — remembered when you switch tabs.
+  const [planOpen, setPlanOpen] = useLocalStorage('planner_plan_open_days', {});
   const inOfficeToday = officeDays.includes(localDateKey(currentDate));
   const officeCount = officeCountForMonth(officeDays, monthKeyOf(currentDate));
 
@@ -212,6 +214,7 @@ export default function TodayView({
     const sameWeek = weekStartedAt && !weekIsStale;
     if (sameWeek && !window.confirm("You've already begun this week. Reset this week's habits anyway?")) return;
     onBeginNewWeek();
+    setPlanOpen({});
   }
 
   const nothingLeft = visibleHabits.length === 0 && visibleLines.length === 0;
@@ -312,6 +315,10 @@ export default function TodayView({
           removeFromPlan={removeFromWeekFocus}
           rerollPlanItem={rerollPlanItem}
           fillBlankDays={fillBlankDays}
+          openMap={planOpen}
+          setOpenMap={setPlanOpen}
+          holidayDays={planHolidayDays}
+          toggleHolidayDay={togglePlanHoliday}
           collapsed={!!todoCollapsed.weekplan}
           onToggleCollapsed={() => setTodoCollapsed((prev) => ({ ...prev, weekplan: !prev.weekplan }))}
         />

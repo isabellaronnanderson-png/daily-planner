@@ -95,6 +95,8 @@ export default function PlannerApp({ user, signOut }) {
   const [todayTabs, setTodayTabs] = useLocalStorage('planner_today_tabs', DEFAULT_TODAY_TABS);
   // When the current Monday–Sunday week was begun (the "Begin a new week" button).
   const [weekStartedAt, setWeekStartedAt] = useLocalStorage('planner_week_started_at', null);
+  // Days of the week plan marked as holiday (e.g. ['fri', 'weekend']): "Fill blank days" skips them.
+  const [planHolidayDays, setPlanHolidayDays] = useLocalStorage('planner_plan_holiday_days', []);
 
   const safeTabOrder = [...tabOrder, ...DEFAULT_TAB_ORDER.filter((k) => !tabOrder.includes(k))].filter((k) => k !== 'weekend' && k !== 'schedule');
 
@@ -105,7 +107,7 @@ export default function PlannerApp({ user, signOut }) {
     habits, habitHistory, weeklyGoalHistory, monthlyGoalHistory, weeklyHabits, groups,
     todoSectionCollapsed, todos, isHolidayMode, holidayStartedAt, dayIsHoliday,
     scratchpad, notes, activeNoteId, dailyNoteText, dailyNoteImage, chores, officeDays, priorityOrder,
-    dailyPriorities, todayLines, todoCategories, todayTabs, weekStartedAt,
+    dailyPriorities, todayLines, todoCategories, todayTabs, weekStartedAt, planHolidayDays,
   };
 
   // Applies a full state blob (from the cloud or a restored backup file) —
@@ -142,6 +144,7 @@ export default function PlannerApp({ user, signOut }) {
     if (data.todoCategories !== undefined) setTodoCategories(data.todoCategories);
     if (data.todayTabs !== undefined) setTodayTabs(data.todayTabs);
     if (data.weekStartedAt !== undefined) setWeekStartedAt(data.weekStartedAt);
+    if (data.planHolidayDays !== undefined) setPlanHolidayDays(data.planHolidayDays);
   }
 
   const { status: syncStatus, errorMessage: syncError } = useCloudSync(user, appState, applyFullState);
@@ -825,6 +828,10 @@ export default function PlannerApp({ user, signOut }) {
     });
   }
   // Takes a task out of the plan and back to the bank.
+  // Mark / unmark a day of the plan as a holiday day.
+  function togglePlanHoliday(dayKey) {
+    setPlanHolidayDays((prev) => (prev.includes(dayKey) ? prev.filter((k) => k !== dayKey) : [...prev, dayKey]));
+  }
   function removeFromWeekFocus(id) {
     setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, weekFocus: false, planDay: null, snoozeUntil: null } : t)));
   }
@@ -878,6 +885,7 @@ export default function PlannerApp({ user, signOut }) {
       let list = [...prev];
       for (const day of weekPlanDays) {
         if (day.lastDateKey < todayKey) continue; // days gone by (the weekend counts until Sunday ends)
+        if (planHolidayDays.includes(day.key)) continue; // marked as a holiday day
         if (list.some((t) => t.weekFocus && t.planDay === day.key)) continue;
         const pick = drawForDay(list, day);
         if (pick) list = list.map((t) => (t.id === pick.id ? { ...t, weekFocus: true, planDay: day.key, isFocus: false } : t));
@@ -916,6 +924,7 @@ export default function PlannerApp({ user, signOut }) {
         .filter((t) => !(t.weekFocus && t.addedHere))
         .map((t) => (t.weekFocus ? { ...t, weekFocus: false, planDay: null, snoozeUntil: null } : t))
     );
+    setPlanHolidayDays([]);
     setWeekStartedAt(nowIso);
   }
 
@@ -1039,6 +1048,8 @@ export default function PlannerApp({ user, signOut }) {
           removeFromWeekFocus={removeFromWeekFocus}
           rerollPlanItem={rerollPlanItem}
           fillBlankDays={fillBlankDays}
+          planHolidayDays={planHolidayDays}
+          togglePlanHoliday={togglePlanHoliday}
           onOpenTodo={() => setActiveTab('todo')}
           updateTodoName={updateTodoName}
           deleteTodo={deleteTodo}
